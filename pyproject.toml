@@ -1,0 +1,12 @@
+[project]
+name = "auth-demo"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dj-rest-auth>=7.0.1",
+    "django>=5.2.7",
+    "django-allauth>=65.12.1",
+    "djangorestframework-simplejwt>=5.5.1",
+]

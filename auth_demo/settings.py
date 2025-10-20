@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-d$t&-2c+i5_m4)1q3zr)%pz!s^j=#%_$5^!7#6+rfx%z#=c9eh
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
 
 
 # Application definition
@@ -38,6 +38,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # required for allauth
+    "django.contrib.sites",
 
     # rest framework
     "rest_framework",
@@ -52,9 +54,18 @@ INSTALLED_APPS = [
     # allauth
     "allauth",
     "allauth.account",
+    "allauth.socialaccount",
+
+    'corsheaders',
+
+    # Local apps
+    'users', 
 ]
 
 MIDDLEWARE = [
+    # corsheaders middleware
+    'corsheaders.middleware.CorsMiddleware', 
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -62,6 +73,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # allauth middleware
     "allauth.account.middleware.AccountMiddleware",
 ]
 
@@ -139,9 +151,6 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-
-
-
 # custom settings 
 
 
@@ -164,9 +173,13 @@ REST_AUTH = {
     "JWT_AUTH_SAMESITE": "Lax",       
     "JWT_AUTH_SECURE": not DEBUG, 
 
+    "JWT_AUTH_RETURN_EXPIRATION": True,  # Include expiration time
+    "SESSION_LOGIN": False,
+
     # serializer configuration
     # "USER_DETAILS_SERIALIZER": "users.api.v1.serializers.CustomUserDetailsSerializer",
 }
+
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -184,12 +197,13 @@ ACCOUNT_SIGNUP_FIELDS = ["username*", "email", "password1*", "password2*"]
 ACCOUNT_EMAIL_TEMPLATE_EXTENSION = "html"
 ACCOUNT_USER_MODEL_USERNAME_FIELD = "username"
 ACCOUNT_EMAIL_VERIFICATION = "optional"
-ACCOUNT_CONFIRM_EMAIL_ON_GET = True
+ACCOUNT_CONFIRM_EMAIL_ON_GET = False
 ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
 ACCOUNT_UNIQUE_EMAIL = True
 
-ACCOUNT_EMAIL_CONFIRMATION_HMAC = True
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = ('http' if DEBUG else 'https') 
 
+ACCOUNT_EMAIL_CONFIRMATION_HMAC = True
 LOGIN_REDIRECT_URL = "/"
 OLD_PASSWORD_FIELD_ENABLED = True
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
@@ -197,6 +211,11 @@ ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
 ACCOUNT_PASSWORD_RESET_EXPIRE_DAYS = 1  
 ACCOUNT_USERNAME_MIN_LENGTH = 3
 ACCOUNT_PASSWORD_MIN_LENGTH = 8
+
+ACCOUNT_LOGIN_METHODS = ["username", "email"]
+SILENCED_SYSTEM_CHECKS = ["account.W001"]
+
+ACCOUNT_ADAPTER = 'users.adapters.CustomAccountAdapter'
 
 
 # Email
@@ -208,3 +227,27 @@ EMAIL_USE_SSL = False
 EMAIL_HOST_USER = ""
 EMAIL_HOST_PASSWORD = ""
 DEFAULT_FROM_EMAIL = "noreply@localhost"
+
+# Domain configuration
+SITE_ID = 1
+
+#### this is default redirect link
+# ACCOUNT_CONFIRM_EMAIL_URL = 'confirm-email/{key}/'
+# PASSWORD_RESET_CONFIRM_URL = 'reset-password/{uid}/{token}/'  
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
+CORS_ALLOW_CREDENTIALS = True 
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://127.0.0.1:3000", 
+    "http://localhost:3000"
+]
+
+
+# Frontend URLs
+FRONTEND_DOMAIN = "localhost:3000"
+FRONTEND_URL = f"{ACCOUNT_DEFAULT_HTTP_PROTOCOL}://{FRONTEND_DOMAIN}/"
+VERIFY_EMAIL_URL = "verify-email/"
+PASSWORD_RESET_URL = "password-reset/"

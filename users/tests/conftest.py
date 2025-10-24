@@ -7,8 +7,23 @@ from django.core import mail
 from rest_framework.test import APIClient
 import re
 
+# Set email backend for all tests
+pytestmark = pytest.mark.django_db
+
+BASE_URL = "http://localhost:8000"
+
 User = get_user_model()
 
+@pytest.fixture(autouse=True)
+def email_backend():
+    """Automatically set locmem email backend for all tests"""
+    from django.conf import settings
+    settings.EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
+
+@pytest.fixture
+def frontend_url():
+    """Frontend URL"""
+    return BASE_URL
 
 @pytest.fixture
 def api_client():
@@ -69,8 +84,7 @@ def clear_mailbox():
     mail.outbox = []
     yield
     mail.outbox = []
-
-
+    
 def extract_verification_key_from_email(email_body):
     """
     Extract the verification key from the email body.
@@ -104,3 +118,148 @@ def key_extractor():
     """Provide a function to extract keys from emails"""
     return extract_verification_key_from_email
 
+
+@pytest.fixture
+def frontend_url():
+    """Frontend URL for testing"""
+    from django.conf import settings
+    return settings.FRONTEND_URL.rstrip('/')
+
+
+@pytest.fixture(scope="class")
+def registered_user_data():
+    """User data that persists across the test class"""
+    return {
+        'username': 'testuser',
+        'email': 'test@example.com',
+        'password1': 'TestPassword123!',
+        'password2': 'TestPassword123!',
+    }
+
+
+@pytest.fixture(scope="class")
+def registered_user_cookies():
+    """Return empty cookies - will be populated by the first test"""
+    return {}
+
+
+@pytest.fixture
+def logout_url():
+    """Logout URL for testing"""
+    return '/api/v1/auth/logout/'
+
+@pytest.fixture
+def login_url():
+    """Login URL for testing"""
+    return '/api/v1/auth/login/'
+
+@pytest.fixture
+def resend_email_url():
+    return '/api/v1/auth/registration/resend-email/'
+
+@pytest.fixture
+def verify_email_url():
+    return '/api/v1/auth/registration/account-confirm-email/'
+
+@pytest.fixture
+def refresh_url():
+    return '/api/v1/auth/token/refresh/'
+
+
+
+
+
+def assert_browser_auth_response(response, expected_status=200):
+    """
+    Helper function to assert that a response from a browser request has the correct format.
+    
+    Args:
+        response: The response object to check
+        expected_status: Expected HTTP status code (default: 200)
+    
+    Returns:
+        dict: Contains 'csrf_token' from response data for use in subsequent requests
+    """
+    assert response.status_code == expected_status
+    
+    # Check that tokens are in cookies, not response body
+    assert 'access' not in response.data, "Access token should not be in response data"
+    assert 'refresh' not in response.data, "Refresh token should not be in response data"
+    
+    # Check that cookies are set
+    cookies = response.cookies
+    assert 'jwt-auth' in cookies, "JWT access cookie should be set"
+    assert 'jwt-refresh-token' in cookies, "JWT refresh cookie should be set"
+    assert 'csrftoken' in cookies, "CSRF token cookie should be set"
+    
+    # Check CSRF token consistency
+    csrf_token_cookie = cookies['csrftoken'].value
+    csrf_token_body = response.data.get('csrf_token')
+    assert csrf_token_body is not None, "CSRF token should be in response data"
+    assert csrf_token_body == csrf_token_cookie, f"CSRF token should be the same {csrf_token_body} != {csrf_token_cookie}"
+    
+    return {
+        'csrf_token': csrf_token_body,
+        'refresh_token': cookies['jwt-refresh-token'].value
+    }
+
+
+def assert_csrf_protection(api_client, url, method='POST', data=None, frontend_url='http://localhost:3000', csrf_token=None):
+    """
+    Helper function to test CSRF protection on an endpoint.
+    
+    Args:
+        api_client: The test client
+        url: The endpoint URL to test
+        method: HTTP method (default: 'POST')
+        data: Request data (default: {})
+        frontend_url: Frontend URL for Origin header
+        csrf_token: CSRF token for the request
+    
+    Returns:
+        tuple: (response_without_csrf, response_with_csrf)
+    """
+    if data is None:
+        data = {}
+    
+    # Test WITHOUT CSRF token
+    if method == 'POST':
+        response_no_csrf = api_client.post(
+            url,
+            data=data,
+            format='json',
+            HTTP_ORIGIN=frontend_url,
+        )
+    elif method == 'PATCH':
+        response_no_csrf = api_client.patch(
+            url,
+            data=data,
+            format='json',
+            HTTP_ORIGIN=frontend_url,
+        )
+    else:
+        raise ValueError(f"Method {method} not supported yet")
+    
+    # Test WITH CSRF token
+    headers = {'HTTP_ORIGIN': frontend_url}
+    if csrf_token:
+        headers['HTTP_X_CSRFTOKEN'] = csrf_token
+    
+    if method == 'POST':
+        response_with_csrf = api_client.post(
+            url,
+            data=data,
+            format='json',
+            **headers
+        )
+    elif method == 'PATCH':
+        response_with_csrf = api_client.patch(
+            url,
+            data=data,
+            format='json',
+            **headers
+        )
+    else:
+        raise ValueError(f"Method {method} not supported yet")
+    
+    return response_no_csrf, response_with_csrf

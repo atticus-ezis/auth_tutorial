@@ -396,7 +396,6 @@ sh test_password_reset_live.sh
 
 ## 📖 Additional Resources
 
-- [PASSWORD_RESET_FLOW.md](./PASSWORD_RESET_FLOW.md) - Detailed flow documentation
 - [Django REST Framework](https://www.django-rest-framework.org/)
 - [dj-rest-auth](https://dj-rest-auth.readthedocs.io/)
 - [django-allauth](https://docs.allauth.org/)

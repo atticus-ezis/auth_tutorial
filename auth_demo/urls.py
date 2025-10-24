@@ -16,7 +16,14 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from users.api.v1.views import CustomVerifyEmailView, CustomPasswordResetConfirmView
+from users.api.v1.views import (
+    CustomVerifyEmailView, 
+    CustomPasswordResetConfirmView,
+    CustomLoginView,
+    CustomRegisterView,
+    CustomLogoutView,
+    CustomTokenRefreshView,
+)
 from django.views.generic import RedirectView
 from django.http import HttpResponseRedirect
 
@@ -29,6 +36,10 @@ urlpatterns = [
         include(
             [
                 # Custom views MUST come before dj_rest_auth.urls to override defaults
+                path("login/", CustomLoginView.as_view(), name="rest_login"),
+                path("logout/", CustomLogoutView.as_view(), name="rest_logout"),
+                path("registration/", CustomRegisterView.as_view(), name="rest_register"),
+                path("token/refresh/", CustomTokenRefreshView.as_view(), name="token_refresh"),
                 path(
                     "registration/account-confirm-email/",
                     CustomVerifyEmailView.as_view(),
@@ -46,7 +57,7 @@ urlpatterns = [
                     ),
                     name="password_reset_confirm",
                 ),
-                # Default dj-rest-auth URLs (our custom views above will override these)
+                # Default dj-rest-auth URLs (remaining endpoints)
                 path('', include('dj_rest_auth.urls')),
                 path('registration/', include('dj_rest_auth.registration.urls')),
             ]

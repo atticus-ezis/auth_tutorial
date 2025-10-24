@@ -167,14 +167,21 @@ REST_AUTH = {
     "USE_JWT": True,
     "JWT_AUTH_COOKIE": "jwt-auth",
     "JWT_AUTH_REFRESH_COOKIE": "jwt-refresh-token",
-    "JWT_AUTH_HTTPONLY": True, 
+    "JWT_AUTH_COOKIE_USE_CSRF": True,
+    "JWT_AUTH_HTTPONLY": True, # keep tokens in cookies secret
     
     # csrf protection
     "JWT_AUTH_SAMESITE": "Lax",       
     "JWT_AUTH_SECURE": not DEBUG, 
 
-    "JWT_AUTH_RETURN_EXPIRATION": True,  # Include expiration time
+    "JWT_AUTH_RETURN_EXPIRATION": True,  
     "SESSION_LOGIN": False,
+
+
+    'CSRF_COOKIE_HTTPONLY': False, # needs to be readable for js
+    
+    # Tokens handled by CookiesOrAuthorizationJWTMixin based on Origin header
+    # "TOKEN_MODEL": None,
 
     # serializer configuration
     # "USER_DETAILS_SERIALIZER": "users.api.v1.serializers.CustomUserDetailsSerializer",
@@ -183,8 +190,9 @@ REST_AUTH = {
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "dj_rest_auth.jwt_auth.JWTCookieAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "users.authentication.JWTCookieAuthenticationWithCSRF",
+        # "dj_rest_auth.jwt_auth.JWTCookieAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_THROTTLE_RATES": {
@@ -248,6 +256,6 @@ CSRF_TRUSTED_ORIGINS = [
 
 # Frontend URLs
 FRONTEND_DOMAIN = "localhost:3000"
-FRONTEND_URL = f"{ACCOUNT_DEFAULT_HTTP_PROTOCOL}://{FRONTEND_DOMAIN}/"
-VERIFY_EMAIL_URL = "verify-email/"
-PASSWORD_RESET_URL = "password-reset/"
+FRONTEND_URL = f"{ACCOUNT_DEFAULT_HTTP_PROTOCOL}://{FRONTEND_DOMAIN}"
+VERIFY_EMAIL_URL = "/verify-email/"
+PASSWORD_RESET_URL = "/password-reset/"

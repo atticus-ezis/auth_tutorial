@@ -189,3 +189,27 @@ class TestPasswordReset:
         assert user_data['username'] == test_user.username
         assert user_data['email'] == test_user.email
 
+    def test_custom_reset( self, api_client, password_reset_url, password_reset_confirm_url,
+        user_details_url, test_user, new_password, clear_mailbox):
+        uid = user_pk_to_url_str(test_user)
+        token = default_token_generator.make_token(test_user)
+        
+        confirm_data = {
+            'uid': uid,
+            'token': token,
+            'new_password1': new_password,
+            'new_password2': new_password,
+        }
+
+        confirm_response = api_client.post(
+            password_reset_confirm_url,
+            data=json.dumps(confirm_data),
+            content_type='application/json'
+        )
+
+        assert confirm_response.status_code == status.HTTP_200_OK
+        response_data = confirm_response.json()
+        assert response_data['access']
+        assert response_data['refresh']
+
+        

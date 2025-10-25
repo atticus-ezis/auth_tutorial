@@ -11,6 +11,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core import mail
 from allauth.account.models import EmailAddress
+from users.tests.conftest import assert_browser_auth_response, assert_missing_csrf_token_fails
 User = get_user_model()
 
 
@@ -70,25 +71,28 @@ class TestHybridAuth:
             HTTP_CONTENT_TYPE='application/json'
         )
         
-        # Import the helper function
-        from users.tests.conftest import assert_browser_auth_response
-        
-        assert response.status_code == status.HTTP_201_CREATED
         auth_data = assert_browser_auth_response(response, status.HTTP_201_CREATED)
         csrf_token = auth_data['csrf_token']
         refresh_token = auth_data['refresh_token']
         
         #### logout 
-        from users.tests.conftest import assert_csrf_protection
-        
-        response_no_csrf, response_with_csrf = assert_csrf_protection(
-            api_client, logout_url, 'POST', {}, frontend_url, csrf_token
+        response_no_csrf = api_client.post(
+            logout_url,
+            data={},
+            format='json',
+            HTTP_ORIGIN=frontend_url
+            # No HTTP_X_CSRFTOKEN!
         )
-        
-        assert response_no_csrf.status_code == status.HTTP_403_FORBIDDEN, \
-            "Logout without CSRF token should be rejected"
-        assert 'CSRF' in str(response_no_csrf.json().get('detail', '')).upper()
-        
+        assert_missing_csrf_token_fails(response_no_csrf)
+
+
+        response_with_csrf = api_client.post(
+            logout_url,
+            data={},
+            format='json',
+            HTTP_ORIGIN=frontend_url,
+            HTTP_X_CSRFTOKEN=csrf_token
+        )
         assert response_with_csrf.status_code == status.HTTP_200_OK
         assert 'logged out' in response_with_csrf.json()['detail'].lower()
         try:
@@ -121,15 +125,26 @@ class TestHybridAuth:
         ################################
 
         # Step 6: Test CSRF protection on protected endpoint
-        protected_response_no_csrf, protected_response_with_csrf = assert_csrf_protection(
-            api_client, user_details_url, 'PATCH', {"username": "TestUser2"}, frontend_url, login_csrf_token
+
+        # WITHOUT CSRF token
+        protected_response_no_csrf = api_client.patch(
+            user_details_url,
+            data={"username": "TestUser2"},
+            format='json',
+            HTTP_ORIGIN=frontend_url,
+            # No HTTP_X_CSRFTOKEN!
         )
+
+        assert_missing_csrf_token_fails(protected_response_no_csrf)
         
-        assert protected_response_no_csrf.status_code == status.HTTP_403_FORBIDDEN, \
-            f"Protected endpoint should reject request without CSRF token, got: {protected_response_no_csrf.status_code}"
-        assert 'CSRF' in str(protected_response_no_csrf.json().get('detail', '')).upper(), \
-            f"Error should mention CSRF, got: {protected_response_no_csrf.json()}"
-        
+        # WITH CSRF token - should succeed
+        protected_response_with_csrf = api_client.patch(
+            user_details_url,
+            data={"username": "TestUser2"},
+            format='json',
+            HTTP_ORIGIN=frontend_url,
+            HTTP_X_CSRFTOKEN=login_csrf_token
+        )
         assert protected_response_with_csrf.status_code == status.HTTP_200_OK, \
             f"Protected endpoint should succeed with CSRF token: {protected_response_with_csrf.json()}"  
         assert protected_response_with_csrf.data['username'] == "TestUser2", "Username should be updated"
@@ -137,17 +152,26 @@ class TestHybridAuth:
         assert updated_user is not None, "Updated user should be found in database"
 
         ####### test refresh token
-        refresh_response_no_csrf, refresh_response_with_csrf = assert_csrf_protection(
-            api_client, refresh_url, 'POST', {}, frontend_url, login_csrf_token
+
+        refresh_response_no_csrf = api_client.post(
+            refresh_url,
+            data={},
+            format='json',
+            HTTP_ORIGIN=frontend_url,
+            # No HTTP_X_CSRFTOKEN
         )
-        
-        assert refresh_response_no_csrf.status_code == status.HTTP_403_FORBIDDEN, \
-            f"Refresh endpoint should reject request without CSRF token, got: {refresh_response_no_csrf.status_code}"
-        assert 'CSRF' in str(refresh_response_no_csrf.json().get('detail', '')).upper(), \
-            f"Error should mention CSRF, got: {refresh_response_no_csrf.json()}"
+        assert_missing_csrf_token_fails(refresh_response_no_csrf)
+
+        refresh_response_with_csrf = api_client.post(
+            refresh_url,
+            data={},
+            format='json',
+            HTTP_ORIGIN=frontend_url,
+            HTTP_X_CSRFTOKEN=login_csrf_token
+        )
 
         assert refresh_response_with_csrf.status_code == status.HTTP_200_OK, \
-            f"Refresh endpoint should succeed with CSRF token: {refresh_response_with_csrf.json()}"
+            f"Protected endpoint should succeed with CSRF token: {refresh_response_with_csrf.json()}"
 
 # @pytest.mark.django_db(transaction=True)
 class TestEmailLinks:
@@ -181,14 +205,10 @@ class TestEmailLinks:
             HTTP_ORIGIN=frontend_url,
         )
         assert response.status_code == status.HTTP_201_CREATED
-
-        # Verify email was sent
         assert len(mailoutbox) == 1
         verification_email = mailoutbox[0]
         assert verification_email.to == [new_user_data['email']]
         assert "confirm" in verification_email.subject.lower()
-
-        # Get CSRF token from the registration response cookies
         csrf_token = response.cookies.get('csrftoken')
         assert csrf_token is not None, "CSRF token should be set in registration response"
         
@@ -209,8 +229,6 @@ class TestEmailLinks:
         assert "confirm" in resend_email.subject.lower()
 
         key = key_extractor(resend_email.body)
-        print(f"######## key: {key}")
-
         verify_response = api_client.post(
             verify_email_url,
             data={'key': key},
@@ -222,10 +240,8 @@ class TestEmailLinks:
         email_address = EmailAddress.objects.get(email=new_user_data['email'])
         assert email_address.verified
 
-        # Import the helper function
-        from users.tests.conftest import assert_browser_auth_response
-        
         verify_auth_data = assert_browser_auth_response(verify_response)
+        verify_csrf_token = verify_auth_data['csrf_token']
 
         ################################
 
@@ -235,5 +251,24 @@ class TestEmailLinks:
             data={'email': new_user_data['email']},
             format='json',
             HTTP_ORIGIN=frontend_url,
+            HTTP_X_CSRFTOKEN=verify_csrf_token
         )
         assert reset_password_response.status_code == status.HTTP_200_OK
+
+        reset_password_email = mailoutbox[2]
+        keys = key_extractor(reset_password_email.body)
+
+        reset_password_confirm_response = api_client.post(
+            password_reset_confirm_url,
+            data={
+                'uid': keys['uid'], 
+                'token': keys['token'], 
+                'new_password1': 'newpassword3', 
+                'new_password2': 'newpassword3'
+            },
+            format='json',
+            HTTP_ORIGIN=frontend_url,
+            # No CSRF token needed - this endpoint is CSRF exempt
+        )
+        assert reset_password_confirm_response.status_code == status.HTTP_200_OK
+        verify_reset_password_response = assert_browser_auth_response(reset_password_confirm_response)

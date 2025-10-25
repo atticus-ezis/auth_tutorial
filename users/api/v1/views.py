@@ -1,4 +1,4 @@
-from rest_framework.views import APIView
+from rest_framework.views import APIView, csrf_exempt
 from dj_rest_auth.views import PasswordResetConfirmView, LoginView, LogoutView
 from dj_rest_auth.registration.views import RegisterView
 from rest_framework.response import Response
@@ -15,14 +15,20 @@ from django.middleware.csrf import get_token
 from users.mixins import CookiesOrAuthorizationJWTMixin
 from users.authentication import CSRFCheckOnly
 from dj_rest_auth.jwt_auth import get_refresh_view
-from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.csrf import csrf_protect, csrf_exempt
 from django.utils.decorators import method_decorator
 
-
 class CustomVerifyEmailView(CookiesOrAuthorizationJWTMixin, APIView):
-    """Email verification view that adapts response format based on Origin header."""
+    """
+    Email verification view that adapts response format based on Origin header.
+    CSRF exempt for better UX since the verification key already provides security.
+    """
     permission_classes = [AllowAny]
-    authentication_classes = []  
+    authentication_classes = []
+    
+    @method_decorator(csrf_exempt)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)  
     
     def post(self, request):
         key = request.data.get("key")
@@ -68,9 +74,14 @@ class CustomPasswordResetConfirmView(CookiesOrAuthorizationJWTMixin, PasswordRes
     Custom password reset confirm view that automatically logs the user in
     after successful password reset by returning JWT tokens.
     Response format adapts based on Origin header.
+    CSRF exempt for better UX since the token in the URL already provides security.
     """
     permission_classes = [AllowAny]  
-    authentication_classes = [] 
+    authentication_classes = []
+    
+    @method_decorator(csrf_exempt)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs) 
     
     def post(self, request, *args, **kwargs):
         print("######################### CUSTOM PASSWORD RESET CONFIRM ACTIVE")

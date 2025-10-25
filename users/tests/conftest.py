@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from rest_framework.test import APIClient
 import re
+from rest_framework import status
 
 # Set email backend for all tests
 pytestmark = pytest.mark.django_db
@@ -95,10 +96,10 @@ def extract_verification_key_from_email(email_body):
     if match:
         return match.group(1)
     
-    # Alternative: password reset pattern
-    match = re.search(r'http://localhost:3000/password-reset/([A-Za-z0-9\-_:]+)', email_body)
+    # Alternative: password reset pattern - URL format: password-reset/{uid}/{token}/
+    match = re.search(r'http://localhost:3000/password-reset/([A-Za-z0-9\-_:]+)/([A-Za-z0-9\-_:]+)', email_body)
     if match:
-        return match.group(1)
+        return {'uid': match.group(1), 'token': match.group(2)}
     
     # Pattern with ? key parameter
     match = re.search(r'[?&]key=([A-Za-z0-9\-_:]+)', email_body)
@@ -111,6 +112,7 @@ def extract_verification_key_from_email(email_body):
         return match.group(1)
         
     return None
+
 
 
 @pytest.fixture
@@ -135,7 +137,6 @@ def registered_user_data():
         'password1': 'TestPassword123!',
         'password2': 'TestPassword123!',
     }
-
 
 @pytest.fixture(scope="class")
 def registered_user_cookies():
@@ -164,9 +165,6 @@ def verify_email_url():
 @pytest.fixture
 def refresh_url():
     return '/api/v1/auth/token/refresh/'
-
-
-
 
 
 def assert_browser_auth_response(response, expected_status=200):
@@ -204,62 +202,15 @@ def assert_browser_auth_response(response, expected_status=200):
     }
 
 
-def assert_csrf_protection(api_client, url, method='POST', data=None, frontend_url='http://localhost:3000', csrf_token=None):
+def assert_missing_csrf_token_fails(response):
     """
-    Helper function to test CSRF protection on an endpoint.
+    Helper function to assert that a response without CSRF token was rejected.
     
     Args:
-        api_client: The test client
-        url: The endpoint URL to test
-        method: HTTP method (default: 'POST')
-        data: Request data (default: {})
-        frontend_url: Frontend URL for Origin header
-        csrf_token: CSRF token for the request
-    
-    Returns:
-        tuple: (response_without_csrf, response_with_csrf)
+        response: The response object to check
     """
-    if data is None:
-        data = {}
-    
-    # Test WITHOUT CSRF token
-    if method == 'POST':
-        response_no_csrf = api_client.post(
-            url,
-            data=data,
-            format='json',
-            HTTP_ORIGIN=frontend_url,
-        )
-    elif method == 'PATCH':
-        response_no_csrf = api_client.patch(
-            url,
-            data=data,
-            format='json',
-            HTTP_ORIGIN=frontend_url,
-        )
-    else:
-        raise ValueError(f"Method {method} not supported yet")
-    
-    # Test WITH CSRF token
-    headers = {'HTTP_ORIGIN': frontend_url}
-    if csrf_token:
-        headers['HTTP_X_CSRFTOKEN'] = csrf_token
-    
-    if method == 'POST':
-        response_with_csrf = api_client.post(
-            url,
-            data=data,
-            format='json',
-            **headers
-        )
-    elif method == 'PATCH':
-        response_with_csrf = api_client.patch(
-            url,
-            data=data,
-            format='json',
-            **headers
-        )
-    else:
-        raise ValueError(f"Method {method} not supported yet")
-    
-    return response_no_csrf, response_with_csrf
+    assert response.status_code == status.HTTP_403_FORBIDDEN, \
+        f"Request without CSRF token should be rejected, got status {response.status_code}"
+    assert 'CSRF' in str(response.json().get('detail', '')).upper(), \
+        f"Error should mention CSRF, got: {response.json()}"
+

@@ -11,7 +11,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core import mail
 from allauth.account.models import EmailAddress
-from users.tests.conftest import assert_browser_auth_response, assert_missing_csrf_token_fails
+from users.tests.conftest import assert_browser_auth_response, assert_missing_csrf_token_fails, assert_app_auth_response
 User = get_user_model()
 
 
@@ -26,26 +26,91 @@ pytestmark = pytest.mark.django_db
 
 class TestHybridAuth:
 
-    def test_app_auth_flow(self, api_client, user_data, registration_url, logout_url, frontend_url, login_url):
+    def test_app_auth_flow(
+        self, 
+        api_client, 
+        user_data, 
+        registration_url, 
+        logout_url, 
+        login_url, 
+        refresh_url, 
+        user_details_url,
+    ):
         """Test complete simplejwt-based auth flow: register, CSRF protection, and logout"""
         
-        #### register 
+        #### register
         response = api_client.post(
             registration_url,
             data=user_data,
             format='json',
         )
         assert response.status_code == status.HTTP_201_CREATED
-        cookies = response.cookies
-        access = cookies.get('jwt-auth') or cookies.get('access')
-        refresh = cookies.get('jwt-refresh-token') or cookies.get('refresh')
-        assert access is None, "JWT access cookie should not be set"
-        assert refresh is None, "JWT refresh cookie should not be set"
-        data = response.json()
-        access_token = data.get('access')
-        refresh_token = data.get('refresh')
-        print(f"######## access_token: {access_token}")
-        print(f"######## refresh_token: {refresh_token}")
+        tokens = assert_app_auth_response(response)
+        refresh_token = tokens['refresh_token']
+        
+        #### refresh 
+        refresh_response = api_client.post(
+            refresh_url,
+            data={'refresh': refresh_token},
+            format='json',
+        )
+        assert refresh_response.status_code == status.HTTP_200_OK
+        refresh_tokens = assert_app_auth_response(refresh_response)
+        refresh_token = refresh_tokens['refresh_token']
+        fresh_access_token = refresh_tokens['access_token']
+
+        #### unprotected endpoint - clear cookies to test without authentication
+        api_client.cookies.clear()
+        unprotected_response = api_client.patch(
+            user_details_url,
+            format='json',
+            data={
+                'username': 'NewUsername'
+            },
+        )
+        assert unprotected_response.status_code == status.HTTP_401_UNAUTHORIZED
+        
+        # protected
+        protected_response = api_client.patch(
+            user_details_url,
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {fresh_access_token}',
+            data={
+                'username': 'NewUsername'
+            },
+        )
+        assert protected_response.status_code == status.HTTP_200_OK
+        assert protected_response.data['username'] == "NewUsername", "Username should be updated"
+        updated_user = User.objects.get(username="NewUsername")
+        assert updated_user is not None, "Updated user should be found in database"
+
+        #### logout
+        logout_response = api_client.post(
+            logout_url,
+            data={"refresh": refresh_token},
+            format='json',
+            # HTTP_AUTHORIZATION=f'Bearer {fresh_access_token}',
+        )
+        assert logout_response.status_code == status.HTTP_200_OK
+        assert 'logged out' in logout_response.json()['detail'].lower()
+        try:
+            RefreshToken(refresh_token)
+            assert False, "Token should be blacklisted after logout"
+        except TokenError as e:
+            assert "blacklisted" in str(e).lower()
+
+        #### login 
+        login_response = api_client.post(
+            login_url,
+            data={
+                'username': 'NewUsername', 
+                'password': user_data['password1']
+            },
+            format='json',
+        )
+        assert login_response.status_code == status.HTTP_200_OK
+        login_tokens = assert_app_auth_response(login_response)
+        refresh_token = login_tokens['refresh_token']
 
 
     
@@ -72,7 +137,6 @@ class TestHybridAuth:
         )
         
         auth_data = assert_browser_auth_response(response, status.HTTP_201_CREATED)
-        csrf_token = auth_data['csrf_token']
         refresh_token = auth_data['refresh_token']
         
         #### logout 
@@ -83,18 +147,8 @@ class TestHybridAuth:
             HTTP_ORIGIN=frontend_url
             # No HTTP_X_CSRFTOKEN!
         )
-        assert_missing_csrf_token_fails(response_no_csrf)
-
-
-        response_with_csrf = api_client.post(
-            logout_url,
-            data={},
-            format='json',
-            HTTP_ORIGIN=frontend_url,
-            HTTP_X_CSRFTOKEN=csrf_token
-        )
-        assert response_with_csrf.status_code == status.HTTP_200_OK
-        assert 'logged out' in response_with_csrf.json()['detail'].lower()
+        assert response_no_csrf.status_code == status.HTTP_200_OK
+        assert 'logged out' in response_no_csrf.json()['detail'].lower()
         try:
             RefreshToken(refresh_token)
             assert False, "Token should be blacklisted after logout"
@@ -268,7 +322,7 @@ class TestEmailLinks:
             },
             format='json',
             HTTP_ORIGIN=frontend_url,
-            # No CSRF token needed - this endpoint is CSRF exempt
+            # HTTP_X_CSRFTOKEN=verify_csrf_token
         )
         assert reset_password_confirm_response.status_code == status.HTTP_200_OK
         verify_reset_password_response = assert_browser_auth_response(reset_password_confirm_response)

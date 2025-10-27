@@ -167,6 +167,23 @@ def refresh_url():
     return '/api/v1/auth/token/refresh/'
 
 
+def assert_app_auth_response(response):
+
+        cookies = response.cookies
+        access = cookies.get('jwt-auth') or cookies.get('access')
+        refresh = cookies.get('jwt-refresh-token') or cookies.get('refresh')
+        assert access is None, "JWT access cookie should not be set"
+        assert refresh is None, "JWT refresh cookie should not be set"
+        data = response.json()
+        access_token = data.get('access')
+        refresh_token = data.get('refresh')
+        assert access_token is not None, "Access token should be set"
+        assert refresh_token is not None, "Refresh token should be set"
+        return {
+            'access_token': access_token,
+            'refresh_token': refresh_token
+        }
+
 def assert_browser_auth_response(response, expected_status=200):
     """
     Helper function to assert that a response from a browser request has the correct format.

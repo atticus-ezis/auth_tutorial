@@ -14,7 +14,7 @@ from django.contrib.auth import get_user_model
 from django.middleware.csrf import get_token
 from users.mixins import CookiesOrAuthorizationJWTMixin
 from users.authentication import CSRFCheckOnly
-from dj_rest_auth.jwt_auth import get_refresh_view
+from dj_rest_auth.jwt_auth import get_refresh_view, JWTCookieAuthentication, JWTAuthentication
 from django.views.decorators.csrf import csrf_protect, csrf_exempt
 from django.utils.decorators import method_decorator
 
@@ -128,14 +128,62 @@ class CustomRegisterView(CookiesOrAuthorizationJWTMixin, RegisterView):
 
 
  
-class CustomLogoutView(LogoutView):
+class CustomLogoutView(APIView):
     """
-    Logout view for JWT-authenticated users.
+    Custom logout view that handles both cookie-based (browser) and header-based (app) JWT authentication.
+    CSRF exempt for better UX - logout is typically a safe operation.
+    """
+    authentication_classes = [JWTCookieAuthentication, JWTAuthentication]
+    permission_classes = [AllowAny]
     
-    CSRF protection is automatically enforced by JWTCookieAuthenticationWithCSRF
-    for cookie-based requests.
-    """
-    pass
+    @method_decorator(csrf_exempt)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
+    def post(self, request, *args, **kwargs):
+        """
+        Handle logout for both cookie and header-based refresh tokens.
+        """
+        # Check if refresh token is in request data (for app authentication)
+        refresh_token = request.data.get('refresh')
+        
+        # If no refresh token in data, try to get it from cookies (for browser authentication)
+        if not refresh_token:
+            refresh_token = request.COOKIES.get('jwt-refresh-token')
+        
+        # If still no refresh token, return error
+        if not refresh_token:
+            return Response(
+                {'detail': 'Refresh token was not included in request data or cookie data.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Blacklist the refresh token
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            
+            # Create response
+            response = Response(
+                {'detail': 'Successfully logged out.'},
+                status=status.HTTP_200_OK
+            )
+            
+            # If the token was in cookies, delete the cookie
+            if request.COOKIES.get('jwt-refresh-token'):
+                response.delete_cookie('jwt-refresh-token')
+                
+            if request.COOKIES.get('jwt-auth'):
+                response.delete_cookie('jwt-auth')
+            
+            return response
+            
+        except Exception as e:
+            return Response(
+                {'detail': f'Error during logout: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     
 
 # Get dj-rest-auth's refresh view class
@@ -151,4 +199,5 @@ class CustomTokenRefreshView(CookiesOrAuthorizationJWTMixin, dj_rest_auth_refres
     are validated directly by the endpoint logic).
     """
     authentication_classes = [CSRFCheckOnly]  
+    pass
     

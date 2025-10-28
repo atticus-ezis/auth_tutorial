@@ -1,16 +1,16 @@
-# Django JWT Authentication Tutorial
+# Django Hybrid Authentication System
 
-Complete implementation of JWT-based authentication using Django REST Framework, dj-rest-auth, and django-allauth with email verification and password reset.
+A comprehensive JWT-based authentication system that intelligently adapts between browser and mobile/desktop clients, providing optimal security and user experience for each platform type.
 
 ## 🎯 Features
 
-- ✅ User registration with JWT tokens
-- ✅ Email verification (HMAC-based)
-- ✅ Password reset with auto-login
-- ✅ Token refresh and blacklisting
-- ✅ HttpOnly cookies for security
-- ✅ No auth required for public endpoints
-- ✅ Comprehensive test suite
+- ✅ **Hybrid Authentication** - Automatically detects browser vs mobile/desktop clients
+- ✅ **Browser Security** - HttpOnly cookies with CSRF protection for web clients
+- ✅ **Mobile/Desktop Support** - JSON tokens in response body for native apps
+- ✅ **Email Verification** - HMAC-based verification with auto-login
+- ✅ **Password Reset** - Secure reset flow with automatic authentication
+- ✅ **Token Management** - Refresh tokens with blacklisting and rotation
+- ✅ **Comprehensive Testing** - Full test suite covering all authentication flows
 
 ## 🚀 Quick Start
 
@@ -98,27 +98,44 @@ pytest
 | POST   | `/api/v1/auth/password/reset/confirm/` | ❌            | Confirm reset, returns JWT  |
 | POST   | `/api/v1/auth/password/change/`        | ✅            | Change password (logged in) |
 
-## 🔑 Key Implementation Details
+## 🔄 Hybrid Authentication Approach
 
-### Custom Views (No Auth Required)
+This system intelligently adapts authentication behavior based on the client type:
 
-Both email verification and password reset **don't require JWT authentication**:
+### Browser Clients (Web Applications)
+
+- **Detection**: Uses `Origin` and `Referer` headers to identify browser requests
+- **Security**: HttpOnly cookies with CSRF protection via double-submit pattern
+- **Token Delivery**: Tokens stored in secure cookies, CSRF token in response body
+- **Response Format**: `authType: 'cookie'` with `csrf_token` field
+
+### Mobile/Desktop Clients (Native Applications)
+
+- **Detection**: Requests without browser-specific headers
+- **Security**: Standard JWT authentication via Authorization header
+- **Token Delivery**: Tokens returned in JSON response body
+- **Response Format**: `authType: 'bearer'` with `access` and `refresh` tokens
+
+### Client Detection Logic
 
 ```python
-class CustomVerifyEmailView(APIView):
-    permission_classes = [AllowAny]
-    authentication_classes = []  # No auth/CSRF required
+def is_browser_request(request):
+    origin = request.headers.get("Origin")
+    referer = request.headers.get("Referer")
 
-    def post(self, request):
-        # Verification key IS the authentication
-        # Returns JWT tokens for auto-login
+    # Check if origin/referer matches trusted frontend URLs
+    if origin and origin.startswith(settings.FRONTEND_URL):
+        return True
+    if referer and referer.startswith(settings.FRONTEND_URL):
+        return True
+    return False
 ```
 
-**Why?**
+### Security Considerations
 
-- User may have logged out or tokens expired
-- The verification key/reset token is cryptographically secure
-- Standard practice for email-based verification
+- **CSRF Protection**: Only enforced for browser clients on unsafe HTTP methods (POST, PUT, PATCH, DELETE)
+- **Token Storage**: HttpOnly cookies prevent XSS attacks in browsers
+- **Flexibility**: Mobile apps can use standard JWT patterns without CSRF complexity
 
 ### Custom Account Adapter
 
@@ -334,15 +351,42 @@ const response = await fetch("http://localhost:8000/api/v1/auth/registration/acc
 window.location.href = "/dashboard";
 ```
 
-## 🧪 Testing
+## 🧪 Testing Goals
+
+The test suite validates the hybrid authentication system across all credential-issuing endpoints:
+
+### Test Coverage
+
+**5 Authentication Endpoints Tested:**
+
+1. **Register** - User registration with JWT tokens
+2. **Login** - User authentication with JWT tokens
+3. **Refresh** - Token refresh functionality
+4. **Email Verification** - Confirm email with auto-login
+5. **Password Reset** - Reset password with auto-login
+
+### Authentication Type Validation
+
+Tests verify that credentials are returned with the correct `authType`:
+
+- **Browser clients**: `authType: 'cookie'` with CSRF token
+- **Mobile/Desktop apps**: `authType: 'bearer'` with access/refresh tokens
+
+### CSRF Protection Testing
+
+For `bearer` authentication on unsafe methods (PUT, PATCH, POST, DELETE):
+
+- **Double-submit CSRF tokens** are required to protect against CSRF attacks
+- **Logout endpoint** doesn't require CSRF protection (only needs valid refresh token)
+- **Refresh endpoint** uses custom authentication class for CSRF validation
 
 ### Test Structure
 
 ```
 users/tests/
 ├── conftest.py                    # Pytest fixtures
-├── test_email_verification.py     # 8 tests
-└── test_password_reset.py         # 4 tests
+├── test_hybrid_auth.py            # Comprehensive hybrid auth tests
+└── README_TESTS.md                # Test documentation
 ```
 
 ### Running Tests
@@ -351,8 +395,8 @@ users/tests/
 # All tests
 pytest users/tests/ -v
 
-# Specific test
-pytest users/tests/test_email_verification.py::TestEmailVerification::test_verify_email_with_valid_key_returns_tokens -v
+# Specific test file
+pytest users/tests/test_hybrid_auth.py -v
 
 # With output
 pytest users/tests/ -v -s
@@ -361,25 +405,244 @@ pytest users/tests/ -v -s
 pytest users/tests/ --cov=users --cov-report=html
 ```
 
-### Manual Testing Script
+## 🔐 Custom Authentication Classes
 
-```
-# Terminal 1: Start server
-python manage.py runserver
+The system uses two specialized authentication classes to handle different security requirements:
 
-# Terminal 2: Run test script
-sh test_password_reset_live.sh
+### CSRFCheckOnly Authentication
+
+```python
+class CSRFCheckOnly(BaseAuthentication):
+    """
+    Authentication class that ONLY enforces CSRF for browser requests.
+    Does not actually authenticate - returns None to allow other auth or no auth.
+
+    Useful for endpoints like token refresh that don't need user authentication
+    but should still be protected against CSRF for browser clients.
+    """
 ```
+
+**Purpose:**
+
+- Enforces CSRF protection for browser requests on unsafe HTTP methods
+- Does not perform user authentication (returns `None`)
+- Allows other authentication classes to handle user verification
+- Used in token refresh endpoint where refresh token validation is handled separately
+
+### JWTCookieAuthenticationWithCSRF
+
+```python
+class JWTCookieAuthenticationWithCSRF(JWTCookieAuthentication):
+    """
+    JWT Cookie authentication with CSRF protection for unsafe HTTP methods.
+
+    Only enforces CSRF when JWT is in cookies (browser clients).
+    Mobile/desktop apps using Authorization header are not affected.
+    """
+```
+
+**Purpose:**
+
+- Extends Django REST Framework's JWT cookie authentication
+- Adds CSRF protection specifically for browser clients
+- Mobile/desktop apps using Authorization headers bypass CSRF checks
+- Ensures secure cookie-based authentication for web applications
+
+### CSRF Protection Implementation
+
+The system uses a **double-submit cookie pattern** for CSRF protection:
+
+```python
+def check_csrf(request):
+    """
+    Check CSRF token using double-submit cookie pattern.
+    Raises PermissionDenied if CSRF check fails.
+    """
+    csrf_token_header = request.META.get('HTTP_X_CSRFTOKEN', '')
+    csrf_token_cookie = request.COOKIES.get('csrftoken', '')
+
+    if csrf_token_header != csrf_token_cookie:
+        raise PermissionDenied('CSRF token mismatch.')
+```
+
+**How it works:**
+
+1. Server sets CSRF token in cookie
+2. Client includes same token in `X-CSRFToken` header
+3. Server verifies both tokens match
+4. Only enforced for browser clients on unsafe methods
 
 ## 🔒 Security Features
 
-- ✅ **HttpOnly Cookies** - XSS protection
-- ✅ **CSRF Protection** - For session-based requests
+- ✅ **HttpOnly Cookies** - XSS protection for browser clients
+- ✅ **CSRF Protection** - Double-submit pattern for web applications
 - ✅ **Token Blacklisting** - Logout/rotation security
 - ✅ **Cryptographically Secure Keys** - HMAC-based verification
-- ✅ **Token Expiration** - Limited lifetime
+- ✅ **Token Expiration** - Limited lifetime with refresh rotation
 - ✅ **CORS Configuration** - Controlled origins
 - ✅ **Password Validation** - Django validators
+- ✅ **Client Detection** - Automatic browser vs mobile/desktop detection
+
+## 🔧 CookiesOrAuthorizationJWTMixin
+
+The core component that enables hybrid authentication by adapting JWT token delivery based on client type:
+
+```python
+class CookiesOrAuthorizationJWTMixin:
+    """
+    Mixin that adapts JWT token delivery based on client type.
+
+    Default behavior (browsers): HttpOnly cookies with CSRF protection
+    Mobile/Desktop apps: JSON tokens in response body
+    """
+```
+
+### How It Works
+
+The mixin overrides `finalize_response()` to modify the authentication response:
+
+#### For Browser Clients:
+
+```python
+if is_browser:
+    set_jwt_cookies(response, access, refresh)
+    get_token(request)  # Generate CSRF token
+
+    csrf_token = request.META.get("CSRF_COOKIE")
+    response.data.pop("access", None)  # Remove tokens from JSON
+    response.data.pop("refresh", None)
+    response.data['csrf_token'] = csrf_token
+    response.data['authType'] = 'cookie'
+```
+
+#### For Mobile/Desktop Clients:
+
+```python
+else:
+    response.data['access'] = access
+    response.data['refresh'] = refresh
+    response.data['authType'] = 'bearer'
+    response.cookies.clear()  # Remove cookies
+```
+
+### Key Features
+
+- **Automatic Detection**: Uses `is_browser_request()` to determine client type
+- **Token Extraction**: Handles tokens from both cookies and response data
+- **Cookie Management**: Sets HttpOnly cookies for browsers, clears them for apps
+- **CSRF Integration**: Generates and includes CSRF tokens for browser clients
+- **Response Formatting**: Adds `authType` field to indicate authentication method
+
+### Usage in Views
+
+Applied to all authentication endpoints:
+
+```python
+class CustomLoginView(CookiesOrAuthorizationJWTMixin, LoginView):
+    """Login view that adapts response format based on Origin header."""
+    pass
+
+class CustomRegisterView(CookiesOrAuthorizationJWTMixin, RegisterView):
+    """Registration view that adapts response format based on Origin header."""
+    pass
+```
+
+## 🎯 Custom Views Implementation
+
+The system includes several custom views that extend Django REST Framework's authentication capabilities:
+
+### CustomVerifyEmailView
+
+```python
+class CustomVerifyEmailView(CookiesOrAuthorizationJWTMixin, APIView):
+    """
+    Email verification view that adapts response format based on Origin header.
+    CSRF exempt for better UX since the verification key already provides security.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+```
+
+**Key Features:**
+
+- **No Authentication Required**: Verification key provides security
+- **Auto-Login**: Returns JWT tokens after successful verification
+- **Hybrid Response**: Adapts to browser vs mobile/desktop clients
+- **HMAC Support**: Handles both database and HMAC-based verification keys
+
+### CustomPasswordResetConfirmView
+
+```python
+class CustomPasswordResetConfirmView(CookiesOrAuthorizationJWTMixin, PasswordResetConfirmView):
+    """
+    Custom password reset confirm view that automatically logs the user in
+    after successful password reset by returning JWT tokens.
+    Response format adapts based on Origin header.
+    CSRF exempt for better UX since the token in the URL already provides security.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+```
+
+**Key Features:**
+
+- **CSRF Exempt**: Reset token provides sufficient security
+- **Auto-Login**: Returns JWT tokens after successful password reset
+- **UID Decoding**: Uses allauth's base36 decoder for user identification
+- **Error Handling**: Comprehensive exception handling with detailed error messages
+
+### CustomLogoutView
+
+```python
+class CustomLogoutView(APIView):
+    """
+    Custom logout view that handles both cookie-based (browser) and header-based (app) JWT authentication.
+    CSRF exempt for better UX - logout is typically a safe operation.
+    """
+    authentication_classes = [JWTAuthentication, JWTCookieAuthentication]
+    permission_classes = [AllowAny]
+```
+
+**Key Features:**
+
+- **Dual Token Support**: Handles refresh tokens from both cookies and request body
+- **Token Blacklisting**: Properly blacklists refresh tokens
+- **Cookie Cleanup**: Removes authentication cookies for browser clients
+- **Flexible Input**: Accepts refresh token from multiple sources
+
+### CustomTokenRefreshView
+
+```python
+class CustomTokenRefreshView(CookiesOrAuthorizationJWTMixin, dj_rest_auth_refresh_view_class):
+    """
+    Token refresh view that supports both cookie and body-based refresh tokens.
+    Uses dj-rest-auth's built-in cookie support with CSRF protection.
+
+    CSRF protection is enforced via CSRFCheckOnly authentication class for browser requests.
+    """
+    authentication_classes = [CSRFCheckOnly, JWTCookieAuthentication]
+```
+
+**Key Features:**
+
+- **CSRF Protection**: Uses `CSRFCheckOnly` for browser clients
+- **Dual Token Support**: Handles both cookie and body-based refresh tokens
+- **Hybrid Response**: Adapts response format based on client type
+- **Built-in Integration**: Extends dj-rest-auth's refresh view functionality
+
+### Standard Authentication Views
+
+The system also includes custom versions of standard authentication views:
+
+```python
+class CustomLoginView(CookiesOrAuthorizationJWTMixin, LoginView):
+    """Login view that adapts response format based on Origin header."""
+
+class CustomRegisterView(CookiesOrAuthorizationJWTMixin, RegisterView):
+    """Registration view that adapts response format based on Origin header."""
+```
+
+These views inherit the hybrid authentication behavior through the mixin while maintaining all standard functionality.
 
 ## 🚀 Production Checklist
 

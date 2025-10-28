@@ -26,9 +26,9 @@ class CustomVerifyEmailView(CookiesOrAuthorizationJWTMixin, APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
     
-    @method_decorator(csrf_exempt)
-    def dispatch(self, *args, **kwargs):
-        return super().dispatch(*args, **kwargs)  
+    # @method_decorator(csrf_exempt)
+    # def dispatch(self, *args, **kwargs):
+    #     return super().dispatch(*args, **kwargs)  
     
     def post(self, request):
         key = request.data.get("key")
@@ -84,8 +84,6 @@ class CustomPasswordResetConfirmView(CookiesOrAuthorizationJWTMixin, PasswordRes
         return super().dispatch(*args, **kwargs) 
     
     def post(self, request, *args, **kwargs):
-        print("######################### CUSTOM PASSWORD RESET CONFIRM ACTIVE")
-        print(f"######################### REQUEST DATA: {request.data}")
         try:
             response = super().post(request, *args, **kwargs)   
 
@@ -127,18 +125,15 @@ class CustomRegisterView(CookiesOrAuthorizationJWTMixin, RegisterView):
     pass
 
 
- 
+ # dj reest auth logout doesn't support api JWT
 class CustomLogoutView(APIView):
     """
     Custom logout view that handles both cookie-based (browser) and header-based (app) JWT authentication.
     CSRF exempt for better UX - logout is typically a safe operation.
     """
-    authentication_classes = [JWTCookieAuthentication, JWTAuthentication]
+    authentication_classes = [JWTAuthentication, JWTCookieAuthentication] # not necessary? 
     permission_classes = [AllowAny]
     
-    @method_decorator(csrf_exempt)
-    def dispatch(self, *args, **kwargs):
-        return super().dispatch(*args, **kwargs)
     
     def post(self, request, *args, **kwargs):
         """
@@ -198,6 +193,6 @@ class CustomTokenRefreshView(CookiesOrAuthorizationJWTMixin, dj_rest_auth_refres
     This class checks CSRF without requiring user authentication (since refresh tokens
     are validated directly by the endpoint logic).
     """
-    authentication_classes = [CSRFCheckOnly]  
+    authentication_classes = [CSRFCheckOnly, JWTCookieAuthentication]  
     pass
     

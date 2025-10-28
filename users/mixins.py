@@ -1,5 +1,6 @@
 from dj_rest_auth.jwt_auth import set_jwt_cookies
 from django.middleware.csrf import get_token
+from users.core import is_browser_request
 from django.conf import settings
 
 
@@ -13,24 +14,6 @@ class CookiesOrAuthorizationJWTMixin:
     When JWT_AUTH_HTTPONLY=True (recommended), dj-rest-auth automatically sets
     HttpOnly cookies by default. This mixin only intervenes for non-browser clients.
     """
-
-    def is_browser_request(self, request):
-        """
-        Determine if request is from a browser by checking Origin/Referer headers.
-        
-        Browsers automatically send Origin header on CORS requests.
-        Mobile/desktop apps typically don't send these headers.
-        """
-        origin = request.headers.get("Origin")
-        referer = request.headers.get("Referer")
-    
-        if origin and (origin.startswith(settings.FRONTEND_URL) or origin in settings.CSRF_TRUSTED_ORIGINS):
-            return True
-        
-        if referer and (referer.startswith(settings.FRONTEND_URL) or referer in settings.CSRF_TRUSTED_ORIGINS):
-            return True
-        
-        return False
     
     def finalize_response(self, request, response, *args, **kwargs):
         """
@@ -47,8 +30,6 @@ class CookiesOrAuthorizationJWTMixin:
         if not hasattr(response, "data") or not isinstance(response.data, dict):
             return response
 
-        is_browser = self.is_browser_request(request)
-
         access = response.data.get("access") 
         refresh = response.data.get("refresh") 
 
@@ -62,15 +43,13 @@ class CookiesOrAuthorizationJWTMixin:
             print(f"#### No tokens detected! refresh {refresh}, access: {access}")
             return response
 
+        is_browser = is_browser_request(request)
+
         if is_browser:
 
             set_jwt_cookies(response, access, refresh)
-            
-            # Get CSRF token - this ensures it's created and will be set in cookie by middleware
-            # get_token() returns a masked token, but we need the secret token that matches the cookie
-            get_token(request)  # Ensure token is created
-            
-            # Get the actual secret token from request (this is what goes in the cookie)
+            get_token(request) 
+
             csrf_token = request.META.get("CSRF_COOKIE")
             
             response.data.pop("access", None)

@@ -1,28 +1,19 @@
-# register a new user with an 'origin' header
-# check that cookies are set. test that csrf token double submit works for a protected endpoint.
-
 import pytest
-import json
 from rest_framework import status
-import requests
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
-from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core import mail
-from allauth.account.models import EmailAddress
-from users.tests.conftest import assert_browser_auth_response, assert_missing_csrf_token_fails, assert_app_auth_response
-User = get_user_model()
 
+from users.tests.conftest import (
+    assert_browser_auth_response, 
+    assert_missing_csrf_token_fails, 
+    assert_app_auth_response
+)
+
+User = get_user_model()
 
 pytestmark = pytest.mark.django_db
 
-
-# Test checks
-# When a browser request is made...
-# response body doesn't include tokens
-# cookies are set with csrf + jwt tokens
-# csrf tokens are required for protected endpoints
 
 class TestHybridAuth:
 
@@ -49,6 +40,14 @@ class TestHybridAuth:
         refresh_token = tokens['refresh_token']
         
         #### refresh 
+        invalid_refresh_token = api_client.post(
+            refresh_url,
+            data={'refresh': 'invalid_refresh_token'},
+            format='json',
+        )
+        assert invalid_refresh_token.status_code == status.HTTP_401_UNAUTHORIZED
+        
+        # valid attempt
         refresh_response = api_client.post(
             refresh_url,
             data={'refresh': refresh_token},
@@ -84,6 +83,7 @@ class TestHybridAuth:
         updated_user = User.objects.get(username="NewUsername")
         assert updated_user is not None, "Updated user should be found in database"
 
+        
         #### logout
         logout_response = api_client.post(
             logout_url,
@@ -91,7 +91,7 @@ class TestHybridAuth:
             format='json',
             # HTTP_AUTHORIZATION=f'Bearer {fresh_access_token}',
         )
-        assert logout_response.status_code == status.HTTP_200_OK
+        assert logout_response.status_code == status.HTTP_200_OK, f"Logout failed: {logout_response.json()}"
         assert 'logged out' in logout_response.json()['detail'].lower()
         try:
             RefreshToken(refresh_token)
@@ -229,100 +229,83 @@ class TestHybridAuth:
 
 # @pytest.mark.django_db(transaction=True)
 class TestEmailLinks:
-    def test_browser_email_links(
-        self, 
-        api_client, 
-        user_data, 
-        registration_url, 
-        logout_url, 
-        frontend_url, 
-        login_url, 
-        mailoutbox, 
-        resend_email_url,
-        verify_email_url,
-        key_extractor,
-        password_reset_url,
-        password_reset_confirm_url,
-    ):
-        """Test email link verification flow: register, email link, login, and logout"""
-        new_user_data = {
-            "username": "TestUser3",
-            "email": "testuser3@example.com",
-            "password1": "testpassword3",
-            "password2": "testpassword3",
-        }
-        #### register
-        response = api_client.post(
-            registration_url,
-            data=new_user_data,
-            format='json',
-            HTTP_ORIGIN=frontend_url,
-        )
-        assert response.status_code == status.HTTP_201_CREATED
-        assert len(mailoutbox) == 1
-        verification_email = mailoutbox[0]
-        assert verification_email.to == [new_user_data['email']]
-        assert "confirm" in verification_email.subject.lower()
-        csrf_token = response.cookies.get('csrftoken')
-        assert csrf_token is not None, "CSRF token should be set in registration response"
-        
-        resend_response = api_client.post(
-            resend_email_url,
-            data={'email': new_user_data['email']},
-            format='json',
-            HTTP_ORIGIN=frontend_url,
-            HTTP_X_CSRFTOKEN=csrf_token.value
-        )
-        
-        assert resend_response.status_code == status.HTTP_200_OK
-        assert len(mailoutbox) == 2, f"Expected 2 emails (registration + resend), got {len(mailoutbox)}"
-        
-        # Check the resend email (should be the second one)
-        resend_email = mailoutbox[1]
-        assert resend_email.to == [new_user_data['email']]
-        assert "confirm" in resend_email.subject.lower()
-
-        key = key_extractor(resend_email.body)
-        verify_response = api_client.post(
+    
+    def test_confirm_email_bearer(self, create_user_with_email, verify_email_url, api_client, frontend_url):
+        verify_bearer = api_client.post(
             verify_email_url,
-            data={'key': key},
+            data={'key': create_user_with_email['key']},
+            format='json',
+        )
+        assert verify_bearer.status_code == status.HTTP_200_OK
+        assert_app_auth_response(verify_bearer)
+        create_user_with_email['email'].refresh_from_db()
+        assert create_user_with_email['email'].verified
+
+    def test_confirm_email_cookie(self, create_user_with_email, verify_email_url, api_client, frontend_url):
+        verify_cookie = api_client.post(
+            verify_email_url,
+            data={'key': create_user_with_email['key']},
             format='json',
             HTTP_ORIGIN=frontend_url,
-            HTTP_X_CSRFTOKEN=csrf_token.value
         )
-        assert verify_response.status_code == status.HTTP_200_OK
-        email_address = EmailAddress.objects.get(email=new_user_data['email'])
-        assert email_address.verified
+        assert verify_cookie.status_code == status.HTTP_200_OK
+        assert_browser_auth_response(verify_cookie)
+        create_user_with_email['email'].refresh_from_db()
+        assert create_user_with_email['email'].verified
 
-        verify_auth_data = assert_browser_auth_response(verify_response)
-        verify_csrf_token = verify_auth_data['csrf_token']
-
-        ################################
-
-        # Step 7: Test password reset flow
-        reset_password_response = api_client.post(
-            password_reset_url,
-            data={'email': new_user_data['email']},
-            format='json',
-            HTTP_ORIGIN=frontend_url,
-            HTTP_X_CSRFTOKEN=verify_csrf_token
-        )
-        assert reset_password_response.status_code == status.HTTP_200_OK
-
-        reset_password_email = mailoutbox[2]
-        keys = key_extractor(reset_password_email.body)
-
-        reset_password_confirm_response = api_client.post(
+    def test_confirm_password_reset_bearer(self, create_user_with_email, password_reset_confirm_url, api_client, frontend_url, login_url):
+        confirm_password_reset_response = api_client.post(
             password_reset_confirm_url,
             data={
-                'uid': keys['uid'], 
-                'token': keys['token'], 
-                'new_password1': 'newpassword3', 
+                'uid': create_user_with_email['uid'],
+                'token': create_user_with_email['token'],
+                'new_password1': 'newpassword3',
+                'new_password2': 'newpassword3'
+            },
+            format='json',
+        )
+        assert confirm_password_reset_response.status_code == status.HTTP_200_OK
+        assert_app_auth_response(confirm_password_reset_response)
+        
+        # Verify new password works by logging in
+        login_response = api_client.post(
+            login_url,
+            data={
+                'username': create_user_with_email['user'].username,
+                'password': 'newpassword3'
+            },
+            format='json',
+        )
+        assert login_response.status_code == status.HTTP_200_OK
+        assert_app_auth_response(login_response)
+
+    def test_confirm_password_reset_cookie(self, create_user_with_email, password_reset_confirm_url, api_client, frontend_url, login_url):
+        confirm_password_reset_response = api_client.post(
+            password_reset_confirm_url,
+            data={
+                'uid': create_user_with_email['uid'],
+                'token': create_user_with_email['token'],
+                'new_password1': 'newpassword3',
                 'new_password2': 'newpassword3'
             },
             format='json',
             HTTP_ORIGIN=frontend_url,
-            # HTTP_X_CSRFTOKEN=verify_csrf_token
         )
-        assert reset_password_confirm_response.status_code == status.HTTP_200_OK
-        verify_reset_password_response = assert_browser_auth_response(reset_password_confirm_response)
+        assert confirm_password_reset_response.status_code == status.HTTP_200_OK
+        assert_browser_auth_response(confirm_password_reset_response)
+        
+        # Clear cookies to simulate a fresh login (not authenticated)
+        api_client.cookies.clear()
+        
+        # Verify new password works by logging in
+        login_response = api_client.post(
+            login_url,
+            data={
+                'username': create_user_with_email['user'].username,
+                'password': 'newpassword3'
+            },
+            format='json',
+            HTTP_ORIGIN=frontend_url,
+        )
+        assert login_response.status_code == status.HTTP_200_OK
+        assert_browser_auth_response(login_response)

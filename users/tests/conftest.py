@@ -3,10 +3,13 @@ Pytest fixtures for authentication tests
 """
 import pytest
 from django.contrib.auth import get_user_model
-from django.core import mail
 from rest_framework.test import APIClient
-import re
 from rest_framework import status
+from allauth.account.models import EmailAddress
+from allauth.account.models import EmailConfirmationHMAC
+from django.contrib.auth.tokens import default_token_generator
+from allauth.account.utils import user_pk_to_url_str
+from allauth.account.forms import default_token_generator as allauth_token_generator
 
 # Set email backend for all tests
 pytestmark = pytest.mark.django_db
@@ -77,49 +80,7 @@ def password_reset_confirm_url():
 def user_details_url():
     """User details endpoint URL"""
     return '/api/v1/auth/user/'
-
-
-@pytest.fixture
-def clear_mailbox():
-    """Clear the email outbox before each test"""
-    mail.outbox = []
-    yield
-    mail.outbox = []
     
-def extract_verification_key_from_email(email_body):
-    """
-    Extract the verification key from the email body.
-    The key is in a URL like: http://localhost:3000/verify-email/KEY
-    """
-    # Look for the frontend URL with verification key (from CustomAccountAdapter)
-    match = re.search(r'http://localhost:3000/verify-email/([A-Za-z0-9\-_:]+)', email_body)
-    if match:
-        return match.group(1)
-    
-    # Alternative: password reset pattern - URL format: password-reset/{uid}/{token}/
-    match = re.search(r'http://localhost:3000/password-reset/([A-Za-z0-9\-_:]+)/([A-Za-z0-9\-_:]+)', email_body)
-    if match:
-        return {'uid': match.group(1), 'token': match.group(2)}
-    
-    # Pattern with ? key parameter
-    match = re.search(r'[?&]key=([A-Za-z0-9\-_:]+)', email_body)
-    if match:
-        return match.group(1)
-    
-    # Last resort: look for HMAC key pattern
-    match = re.search(r'([A-Za-z0-9]+:[A-Za-z0-9\-]{20,})', email_body)
-    if match:
-        return match.group(1)
-        
-    return None
-
-
-
-@pytest.fixture
-def key_extractor():
-    """Provide a function to extract keys from emails"""
-    return extract_verification_key_from_email
-
 
 @pytest.fixture
 def frontend_url():
@@ -128,20 +89,6 @@ def frontend_url():
     return settings.FRONTEND_URL.rstrip('/')
 
 
-@pytest.fixture(scope="class")
-def registered_user_data():
-    """User data that persists across the test class"""
-    return {
-        'username': 'testuser',
-        'email': 'test@example.com',
-        'password1': 'TestPassword123!',
-        'password2': 'TestPassword123!',
-    }
-
-@pytest.fixture(scope="class")
-def registered_user_cookies():
-    """Return empty cookies - will be populated by the first test"""
-    return {}
 
 
 @pytest.fixture
@@ -154,13 +101,6 @@ def login_url():
     """Login URL for testing"""
     return '/api/v1/auth/login/'
 
-@pytest.fixture
-def resend_email_url():
-    return '/api/v1/auth/registration/resend-email/'
-
-@pytest.fixture
-def verify_email_url():
-    return '/api/v1/auth/registration/account-confirm-email/'
 
 @pytest.fixture
 def refresh_url():
@@ -175,32 +115,26 @@ def assert_app_auth_response(response):
         assert access is None, "JWT access cookie should not be set"
         assert refresh is None, "JWT refresh cookie should not be set"
         data = response.json()
+        authType = data.get('authType')
         access_token = data.get('access')
         refresh_token = data.get('refresh')
         assert access_token is not None, "Access token should be set"
         assert refresh_token is not None, "Refresh token should be set"
+        assert authType == 'bearer', "Auth type should be bearer"
         return {
             'access_token': access_token,
             'refresh_token': refresh_token
         }
 
 def assert_browser_auth_response(response, expected_status=200):
-    """
-    Helper function to assert that a response from a browser request has the correct format.
-    
-    Args:
-        response: The response object to check
-        expected_status: Expected HTTP status code (default: 200)
-    
-    Returns:
-        dict: Contains 'csrf_token' from response data for use in subsequent requests
-    """
+
     assert response.status_code == expected_status
     
     # Check that tokens are in cookies, not response body
     assert 'access' not in response.data, "Access token should not be in response data"
     assert 'refresh' not in response.data, "Refresh token should not be in response data"
-    
+    authType = response.data.get('authType')
+    assert authType == 'cookie', "Auth type should be cookie"
     # Check that cookies are set
     cookies = response.cookies
     assert 'jwt-auth' in cookies, "JWT access cookie should be set"
@@ -218,7 +152,6 @@ def assert_browser_auth_response(response, expected_status=200):
         'refresh_token': cookies['jwt-refresh-token'].value
     }
 
-
 def assert_missing_csrf_token_fails(response):
     """
     Helper function to assert that a response without CSRF token was rejected.
@@ -231,3 +164,33 @@ def assert_missing_csrf_token_fails(response):
     assert 'CSRF' in str(response.json().get('detail', '')).upper(), \
         f"Error should mention CSRF, got: {response.json()}"
 
+@pytest.fixture
+def create_user_with_email():
+    """Create a user with email verification and password reset tokens."""
+    # Clear any existing users to avoid conflicts
+    User.objects.all().delete()
+    
+    existing_user = User.objects.create_user(
+        username='DummyUser',
+        password='TestPass4321',
+        email='example.email@gmail.com'
+    )
+
+    email_address = EmailAddress.objects.create(
+        user=existing_user,  
+        email=existing_user.email,
+        verified=False
+    )
+
+    email_confirmation = EmailConfirmationHMAC(email_address)
+    key = email_confirmation.key    
+    uid = user_pk_to_url_str(existing_user)
+    token = allauth_token_generator.make_token(existing_user)
+
+    return {
+        'user': existing_user,
+        'key': key,
+        'uid': uid,
+        'token': token,
+        'email': email_address,
+    }

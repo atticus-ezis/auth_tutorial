@@ -1,0 +1,10 @@
+{
+  "project_name": "Auth Demo",
+  "project_slug": "{{ cookiecutter.project_name.lower().replace(' ', '_').replace('-', '_') }}",
+  "author_name": "Your Name",
+  "email": "your.email@example.com",
+  "description": "Django authentication template with hybrid JWT/cookie auth",
+  "django_secret_key": "django-insecure-change-me",
+  "debug": true,
+  "frontend_domain": "localhost:3000"
+}

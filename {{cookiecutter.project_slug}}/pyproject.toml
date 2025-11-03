@@ -13,10 +13,7 @@ dependencies = [
     "django-allauth[socialaccount]>=65.12.1",
     "django-cors-headers>=4.9.0",
     "djangorestframework-simplejwt>=5.5.1",
-]
-
-[project.optional-dependencies]
-dev = [
     "pytest>=8.4.2",
     "pytest-django>=4.11.1",
 ]
+

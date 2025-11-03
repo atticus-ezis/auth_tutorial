@@ -7,20 +7,23 @@ This repository is a Cookiecutter template that scaffolds a Django project preco
 1. Install Cookiecutter if you do not have it yet:
 
    ```bash
-   pip install cookiecutter
+   pipx install cookiecutter
    ```
 
 2. Generate a new project from this template:
+   form your project directory...
 
    ```bash
-   cookiecutter /path/to/this/repository
+   cookiecutter gh:/atticus-ezis/auth_tutorial.git
+   or
+   cookiecutter https://github.com/atticus-ezis/auth_tutorial.git
    ```
-
-   You can also use the repository URL if it is published remotely.
 
 3. Answer the prompts to customise project metadata such as the project name, author information, secret key, and frontend domain.
 
-4. Move into the generated project directory and follow the instructions in its `README.md` to install dependencies, run migrations, and start the development server.
+4. Run 'uv sync' in terminal
+5. Activate the '.venv' uv creates
+6. run 'pytest' inside .venv to generate the user authentication testcases.
 
 ## Template Structure
 

@@ -192,9 +192,8 @@ REST_AUTH = {
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-        "users.authentication.JWTCookieAuthenticationWithCSRF",
-        # "dj_rest_auth.jwt_auth.JWTCookieAuthentication",
+        "users.authentication.BearerJWTAuthentication",
+        "users.authentication.CookieJWTAuthenticationWithCSRF",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_THROTTLE_RATES": {

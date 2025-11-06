@@ -3,7 +3,7 @@ from dj_rest_auth.views import PasswordResetConfirmView, LoginView, LogoutView
 from dj_rest_auth.registration.views import RegisterView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny 
+from rest_framework.permissions import AllowAny, IsAuthenticated 
 from allauth.account.utils import url_str_to_user_pk 
 from rest_framework_simplejwt.tokens import RefreshToken
 import traceback
@@ -12,16 +12,22 @@ from allauth.account.models import EmailConfirmation, EmailConfirmationHMAC
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from django.contrib.auth import get_user_model
 from django.middleware.csrf import get_token
-from users.mixins import CookiesOrAuthorizationJWTMixin
-from users.authentication import CSRFCheckOnly
+# from users.mixins import CookiesOrAuthorizationJWTMixin
 from dj_rest_auth.jwt_auth import get_refresh_view, JWTCookieAuthentication, JWTAuthentication
 from django.views.decorators.csrf import csrf_protect, csrf_exempt
 from django.utils.decorators import method_decorator
+from users.mixins import HybridAuthMixin
+from users.core import make_tokens, client_wants_app_tokens
+from users.authentication import CustomRefreshTokenAuthentication, BearerJWTAuthentication, CookieJWTAuthenticationWithCSRF
+from rest_framework.exceptions import AuthenticationFailed
+from django.conf import settings
 
-class CustomVerifyEmailView(CookiesOrAuthorizationJWTMixin, APIView):
+
+class CustomVerifyEmailView(HybridAuthMixin, APIView):
     """
-    Email verification view that adapts response format based on Origin header.
-    CSRF exempt for better UX since the verification key already provides security.
+    Recieves email verify key and X-Client type from frontend
+    mixin returns correct tokens based on X-Client type
+
     """
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -34,7 +40,12 @@ class CustomVerifyEmailView(CookiesOrAuthorizationJWTMixin, APIView):
         key = request.data.get("key")
         if not key:
             raise ValidationError({"key": [("Missing verification key.")]})
-
+        auth_type = request.headers.get('X-Client')
+        if not auth_type:
+            raise ValidationError({"detail": [("Missing X-Client header.")]})
+        if auth_type not in ['browser', 'app']:
+            raise ValidationError({"detail": [("Invalid authentication type. expected 'browser' or 'app', got '{auth_type}'.")]})
+        
         try:
             emailconfirmation = EmailConfirmation.objects.filter(
                 key=key
@@ -45,11 +56,11 @@ class CustomVerifyEmailView(CookiesOrAuthorizationJWTMixin, APIView):
             # Confirm the email address (marks it as verified in the database)
             emailconfirmation.confirm(request)
             
+            # Create tokens with correct audience
             user = emailconfirmation.email_address.user
-
-            refresh = RefreshToken.for_user(user)
-            access = refresh.access_token
-
+            aud = 'app' if auth_type == 'app' else 'browser'
+            access, refresh = make_tokens(user, aud)
+            
             return Response(
                 {
                     "detail": "Email confirmed successfully",
@@ -68,12 +79,10 @@ class CustomVerifyEmailView(CookiesOrAuthorizationJWTMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-class CustomPasswordResetConfirmView(CookiesOrAuthorizationJWTMixin, PasswordResetConfirmView):
+class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
     """
-    Custom password reset confirm view that automatically logs the user in
-    after successful password reset by returning JWT tokens.
-    Response format adapts based on Origin header.
-    CSRF exempt for better UX since the token in the URL already provides security.
+    takes X-Client type and new password from frontend with uid token
+    returns correct tokens based on X-Client type
     """
     permission_classes = [AllowAny]  
     authentication_classes = []
@@ -83,9 +92,13 @@ class CustomPasswordResetConfirmView(CookiesOrAuthorizationJWTMixin, PasswordRes
         return super().dispatch(*args, **kwargs) 
     
     def post(self, request, *args, **kwargs):
+        auth_type = request.headers.get('X-Client')
+        if not auth_type:
+            raise ValidationError({"detail": [("Missing X-Client header.")]})
+        if auth_type not in ['browser', 'app']:
+            raise ValidationError({"detail": [("Invalid authentication type. expected 'browser' or 'app', got '{auth_type}'.")]})
         try:
-            response = super().post(request, *args, **kwargs)   
-
+            response = super().post(request, *args, **kwargs) 
             if response.status_code == status.HTTP_200_OK:
                 User = get_user_model()
                 uid = request.data.get("uid")
@@ -93,14 +106,13 @@ class CustomPasswordResetConfirmView(CookiesOrAuthorizationJWTMixin, PasswordRes
                 # Decode uid using allauth's base36 decoder
                 user_pk = url_str_to_user_pk(uid)
                 user = User.objects.get(pk=user_pk)
-                
-                # Generate JWT tokens
-                refresh = RefreshToken.for_user(user)
-                access = refresh.access_token
-                
+
+                aud = 'app' if auth_type == 'app' else 'browser'
+                access, refresh = make_tokens(user, aud)                
                 # Add tokens to response data (mixin will handle cookie/JSON formatting)
                 response.data["access"] = str(access)
                 response.data["refresh"] = str(refresh)
+                response.data["message"] = "Password reset successfully"
             
             return response
             
@@ -112,24 +124,22 @@ class CustomPasswordResetConfirmView(CookiesOrAuthorizationJWTMixin, PasswordRes
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-class CustomLoginView(CookiesOrAuthorizationJWTMixin, LoginView):
+class CustomLoginView(HybridAuthMixin, LoginView):
     """Login view that adapts response format based on Origin header."""
+    authentication_classes = []
     pass
 
-class CustomRegisterView(CookiesOrAuthorizationJWTMixin, RegisterView):
+class CustomRegisterView(HybridAuthMixin, RegisterView):
     """Registration view that adapts response format based on Origin header."""
     pass
-
-
- # dj reest auth logout doesn't support api JWT
 
 class CustomLogoutView(APIView):
     """
     Custom logout view that handles both cookie-based (browser) and header-based (app) JWT authentication.
     CSRF exempt for better UX - logout is typically a safe operation.
     """
-    authentication_classes = [JWTAuthentication, JWTCookieAuthentication] # not necessary? 
-    permission_classes = [AllowAny]
+    authentication_classes = [CookieJWTAuthenticationWithCSRF, BearerJWTAuthentication] 
+    permission_classes = [IsAuthenticated]
     
     
     def post(self, request, *args, **kwargs):
@@ -141,7 +151,7 @@ class CustomLogoutView(APIView):
         
         # If no refresh token in data, try to get it from cookies (for browser authentication)
         if not refresh_token:
-            refresh_token = request.COOKIES.get('jwt-refresh-token')
+            refresh_token = request.COOKIES.get(settings.REST_AUTH.get('JWT_AUTH_REFRESH_COOKIE', 'jwt-refresh-token'))
         
         # If still no refresh token, return error
         if not refresh_token:
@@ -162,11 +172,11 @@ class CustomLogoutView(APIView):
             )
             
             # If the token was in cookies, delete the cookie
-            if request.COOKIES.get('jwt-refresh-token'):
-                response.delete_cookie('jwt-refresh-token')
+            if request.COOKIES.get(settings.REST_AUTH.get('JWT_AUTH_REFRESH_COOKIE', 'jwt-refresh-token')):
+                response.delete_cookie(settings.REST_AUTH.get('JWT_AUTH_REFRESH_COOKIE', 'jwt-refresh-token'))
                 
-            if request.COOKIES.get('jwt-auth'):
-                response.delete_cookie('jwt-auth')
+            if request.COOKIES.get(settings.REST_AUTH.get('JWT_AUTH_COOKIE', 'jwt-auth')):
+                response.delete_cookie(settings.REST_AUTH.get('JWT_AUTH_COOKIE', 'jwt-auth'))
             
             return response
             
@@ -178,15 +188,11 @@ class CustomLogoutView(APIView):
 
 # Get dj-rest-auth's refresh view class
 dj_rest_auth_refresh_view_class = get_refresh_view()
-class CustomTokenRefreshView(CookiesOrAuthorizationJWTMixin, dj_rest_auth_refresh_view_class):
-    """
-    Token refresh view that supports both cookie and body-based refresh tokens.
-    Uses dj-rest-auth's built-in cookie support with CSRF protection.
-    
-    CSRF protection is enforced via CSRFCheckOnly authentication class for browser requests.
-    This class checks CSRF without requiring user authentication (since refresh tokens
-    are validated directly by the endpoint logic).
-    """
-    authentication_classes = [CSRFCheckOnly, JWTCookieAuthentication]  
+class CustomTokenRefreshView(HybridAuthMixin, dj_rest_auth_refresh_view_class):
+
+    authentication_classes = [CustomRefreshTokenAuthentication]  
+
     pass
+
+    
     

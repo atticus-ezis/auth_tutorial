@@ -1,6 +1,7 @@
 from rest_framework.exceptions import PermissionDenied
 from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.exceptions import ValidationError
 
 # Usefule helper functions
 
@@ -35,3 +36,10 @@ def check_csrf(request):
 def client_wants_app_tokens(request):
         return request.headers.get("X-Client", "").lower() == "app"
 
+def require_auth_type(request):
+    auth_type = request.headers.get('X-Client')
+    if not auth_type:
+        raise ValidationError({"detail": [("Missing X-Client header.")]})
+    if auth_type not in ['browser', 'app']:
+        raise ValidationError({"detail": [("Invalid authentication type. expected 'browser' or 'app', got '{auth_type}'.")]})
+    return auth_type

@@ -1,5 +1,6 @@
 import pytest
 from django.contrib.auth.models import User
+from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework import status
@@ -9,6 +10,7 @@ pytestmark = pytest.mark.django_db
 
 access_cookie = settings.REST_AUTH.get('JWT_AUTH_COOKIE', 'jwt-auth')
 refresh_cookie = settings.REST_AUTH.get('JWT_AUTH_REFRESH_COOKIE', 'jwt-refresh-token')
+csrf_cookie_name = settings.CSRF_COOKIE_NAME
 
 @pytest.fixture
 def make_user():
@@ -20,9 +22,9 @@ def register_data():
     """Provide standard user registration data"""
     return {
         'username': 'testuser',
-        'email': 'test@example.com',
-        'password1': 'TestPassword123!',
-        'password2': 'TestPassword123!',
+        'email': 'testuser@example.com',
+        'password1': 'testpassword',
+        'password2': 'testpassword',
     }
 
 @pytest.fixture
@@ -33,32 +35,52 @@ def api_client():
 @pytest.fixture
 def registration_url():
     """Registration URL"""
-    return '/api/v1/auth/registration/'
+    return reverse('rest_register')
 
 @pytest.fixture
 def login_url():
     """Login URL"""
-    return '/api/v1/auth/login/'
+    return reverse('rest_login')
 
 @pytest.fixture
 def refresh_url():
     """Refresh URL"""
-    return '/api/v1/auth/token/refresh/'
+    return reverse('rest_token_refresh')
 
 @pytest.fixture
 def logout_url():
     """Logout URL"""
-    return '/api/v1/auth/logout/'
+    return reverse('rest_logout')
 
 @pytest.fixture
 def confirm_email_url():
     """Email confirmation URL"""
-    return '/api/v1/auth/registration/account-confirm-email/'
+    return reverse('account_confirm_email_api')
+
+@pytest.fixture
+def resend_email_url():
+    """Resend email URL"""
+    return reverse('resend_email')
+
+@pytest.fixture
+def reset_password_url():
+    """Reset password URL"""
+    return reverse('rest_password_reset')
+
+@pytest.fixture
+def resend_password_email_url():
+    """Resend password email URL"""
+    return reverse('resend_password_email')
 
 @pytest.fixture
 def password_reset_confirm_url():
     """Password reset confirm URL"""
-    return '/api/v1/auth/password/reset/confirm/'
+    return reverse('password_reset_confirm_api')
+
+@pytest.fixture
+def user_details_url():
+    """User details URL"""
+    return reverse('user_details')
 
 
 def browser_output(response, expected_status):
@@ -67,12 +89,9 @@ def browser_output(response, expected_status):
     data = response.data 
     access = data.get("access")
     refresh = data.get("refresh")
-    csrf_body = data.get("csrftoken_body")
     auth_type = data.get("authType")
     assert not access or not refresh
     assert auth_type == "cookie"
-    assert csrf_body is not None, "CSRF token should be in response data"
-
     # cookie check
     cookies = response.cookies 
     access_raw = cookies.get(access_cookie) 
@@ -82,7 +101,8 @@ def browser_output(response, expected_status):
     csrf_cookie = cookies.get("csrftoken_cookie")
     assert access.get('aud') == "browser", "JWT access cookie should have browser audience"
     assert refresh.get('aud') == "browser", "JWT refresh cookie should have browser audience"
-    assert csrf_cookie.value == csrf_body, "CSRFs tokens should match"
+    assert csrf_cookie is not None, "CSRF token should be in response cookies"
+
 
 def app_output(response, expected_status):
     # body check
@@ -104,23 +124,37 @@ def app_output(response, expected_status):
     cookies = response.cookies 
     assert cookies.get(access_cookie) is None, "JWT access token should not be in response cookies"
     assert cookies.get(refresh_cookie) is None, "JWT refresh token should not be in response cookies"
-    assert cookies.get("csrftoken_cookie") is None, "CSRF token should not be in response cookies"
+    assert cookies.get(csrf_cookie_name) is None, "CSRF token should not be in response cookies"
 
 
 def get_login_response(api_client, login_url, username, password, client='browser', csrf_token=None):
-        # Only clear cookies if we're not providing a CSRF token
-        # (CSRF double-submit requires both cookie and header to match)
-        if not csrf_token:
-            api_client.cookies.clear()
-        
-        headers = {'X-Client': client}
-        if csrf_token:
-            headers['X-CSRFToken'] = csrf_token
-        
-        login_response = api_client.post(
-            login_url,
-            data={'username': username, 'password': password},
-            format='json',
-            headers=headers
-        )
-        return login_response
+    # Only clear cookies if we're not providing a CSRF token
+    # (CSRF double-submit requires both cookie and header to match)
+    if not csrf_token:
+        api_client.cookies.clear()
+
+    headers = {'X-Client': client}
+    if csrf_token:
+        headers['X-CSRFToken'] = csrf_token
+
+    login_response = api_client.post(
+        login_url,
+        data={'username': username, 'password': password},
+        format='json',
+        headers=headers
+    )
+    return login_response
+
+
+def get_csrf_token(api_client, url=login_url, username="username", password="password"):
+    response = get_login_response(
+        api_client,
+        url,
+        username,
+        password,
+        client="browser",
+    )
+
+    csrf_cookie = response.cookies.get(csrf_cookie_name)
+    assert csrf_cookie is not None, "CSRF token should be set in cookies"
+    return csrf_cookie.value

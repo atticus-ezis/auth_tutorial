@@ -1,5 +1,5 @@
 from rest_framework.views import APIView, csrf_exempt
-from dj_rest_auth.views import PasswordResetConfirmView, LoginView, LogoutView
+from dj_rest_auth.views import PasswordResetConfirmView, LoginView, PasswordChangeView
 from dj_rest_auth.registration.views import RegisterView
 from rest_framework.response import Response
 from rest_framework import status
@@ -7,19 +7,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from allauth.account.utils import url_str_to_user_pk 
 from rest_framework_simplejwt.tokens import RefreshToken
 import traceback
-from dj_rest_auth.jwt_auth import set_jwt_cookies
 from allauth.account.models import EmailConfirmation, EmailConfirmationHMAC
-from rest_framework.exceptions import ValidationError, PermissionDenied
+from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model
-from django.middleware.csrf import get_token
 # from users.mixins import CookiesOrAuthorizationJWTMixin
-from dj_rest_auth.jwt_auth import get_refresh_view, JWTCookieAuthentication, JWTAuthentication
-from django.views.decorators.csrf import csrf_protect, csrf_exempt
+from dj_rest_auth.jwt_auth import get_refresh_view
+from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from users.mixins import HybridAuthMixin
-from users.core import make_tokens, client_wants_app_tokens
+from users.core import make_tokens, require_auth_type
 from users.authentication import CustomRefreshTokenAuthentication, BearerJWTAuthentication, CookieJWTAuthenticationWithCSRF
-from rest_framework.exceptions import AuthenticationFailed
 from django.conf import settings
 
 
@@ -40,11 +37,8 @@ class CustomVerifyEmailView(HybridAuthMixin, APIView):
         key = request.data.get("key")
         if not key:
             raise ValidationError({"key": [("Missing verification key.")]})
-        auth_type = request.headers.get('X-Client')
-        if not auth_type:
-            raise ValidationError({"detail": [("Missing X-Client header.")]})
-        if auth_type not in ['browser', 'app']:
-            raise ValidationError({"detail": [("Invalid authentication type. expected 'browser' or 'app', got '{auth_type}'.")]})
+
+        auth_type = require_auth_type(request) # must know what to return 
         
         try:
             emailconfirmation = EmailConfirmation.objects.filter(
@@ -92,11 +86,7 @@ class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
         return super().dispatch(*args, **kwargs) 
     
     def post(self, request, *args, **kwargs):
-        auth_type = request.headers.get('X-Client')
-        if not auth_type:
-            raise ValidationError({"detail": [("Missing X-Client header.")]})
-        if auth_type not in ['browser', 'app']:
-            raise ValidationError({"detail": [("Invalid authentication type. expected 'browser' or 'app', got '{auth_type}'.")]})
+        auth_type = require_auth_type(request) # must know what to return 
         try:
             response = super().post(request, *args, **kwargs) 
             if response.status_code == status.HTTP_200_OK:
@@ -131,6 +121,10 @@ class CustomLoginView(HybridAuthMixin, LoginView):
 
 class CustomRegisterView(HybridAuthMixin, RegisterView):
     """Registration view that adapts response format based on Origin header."""
+    pass
+
+class CustomPasswordChangeView(HybridAuthMixin, PasswordChangeView):
+    """Password change view that adapts response format based on Origin header."""
     pass
 
 class CustomLogoutView(APIView):
@@ -185,7 +179,6 @@ class CustomLogoutView(APIView):
                 {'detail': f'Error during logout: {str(e)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
 # Get dj-rest-auth's refresh view class
 dj_rest_auth_refresh_view_class = get_refresh_view()
 class CustomTokenRefreshView(HybridAuthMixin, dj_rest_auth_refresh_view_class):
@@ -194,5 +187,3 @@ class CustomTokenRefreshView(HybridAuthMixin, dj_rest_auth_refresh_view_class):
 
     pass
 
-    
-    

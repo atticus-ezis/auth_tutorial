@@ -6,6 +6,7 @@ from users.core import make_tokens, client_wants_app_tokens
 
 jwt_auth_cookie = settings.REST_AUTH.get('JWT_AUTH_COOKIE', 'jwt-auth')
 jwt_refresh_cookie = settings.REST_AUTH.get('JWT_AUTH_REFRESH_COOKIE', 'jwt-refresh-token')
+csrf_cookie_name = settings.CSRF_COOKIE_NAME
 
 class HybridAuthMixin:
     """
@@ -36,24 +37,17 @@ class HybridAuthMixin:
             httponly=True,
         )
         
-        # Set CSRF token cookie (needs to be readable by JS for double-submit pattern)
-        # First check if CSRF token already exists in request (from middleware)
         csrf_token = request.META.get('CSRF_COOKIE')
-        
-        # If not, generate a new one
         if not csrf_token:
             csrf_token = get_token(request)
-        
-        # Set the cookie
+
+        # Middleware should set this but include anyway for safety   
         response.set_cookie(
-            "csrftoken_cookie", 
-            csrf_token, 
-            httponly=False, 
+            csrf_cookie_name,
+            csrf_token,
         )
         
-        # Add CSRF token and authType to response data (use same key as other mixin for consistency)
         if hasattr(response, 'data') and isinstance(response.data, dict):
-            response.data['csrftoken_body'] = csrf_token  # Changed from 'csrftoken' to 'csrf_token' for consistency
             response.data['authType'] = 'cookie'
         
         return response
@@ -69,14 +63,20 @@ class HybridAuthMixin:
             response.data["authType"] = "bearer"
 
         if jwt_auth_cookie in response.cookies:
+            response.delete_cookie(jwt_auth_cookie)
             del response.cookies[jwt_auth_cookie]
         if jwt_refresh_cookie in response.cookies:
+            response.delete_cookie(jwt_refresh_cookie)
             del response.cookies[jwt_refresh_cookie]
+        if csrf_cookie_name in response.cookies:
+            response.delete_cookie(csrf_cookie_name)
+            del response.cookies[csrf_cookie_name]
         if 'csrftoken' in response.cookies:
             del response.cookies['csrftoken']
         if 'csrftoken_cookie' in response.cookies:
             del response.cookies['csrftoken_cookie']
-    
+
+
         return response
 
     def _validate_token_has_aud(self, token_str, expected_aud):

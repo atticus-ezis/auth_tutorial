@@ -71,7 +71,8 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
+    # 'django.middleware.csrf.CsrfViewMiddleware',
+    'users.middleware.ConditionalCsrfMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -179,8 +180,7 @@ REST_AUTH = {
     "JWT_AUTH_RETURN_EXPIRATION": True,  
     "SESSION_LOGIN": False,
 
-
-    'CSRF_COOKIE_HTTPONLY': False, # needs to be readable for js
+    "LOGOUT_ON_PASSWORD_CHANGE": False,
     
     # Tokens handled by CookiesOrAuthorizationJWTMixin based on Origin header
     # "TOKEN_MODEL": None,
@@ -228,7 +228,10 @@ ACCOUNT_ADAPTER = 'users.adapters.CustomAccountAdapter'
 
 
 # Email
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+MAILPIT_ENABLED = False
+# Use console backend for development (prints emails to console)
+# For production, use SMTP backend with proper email server configuration
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" if MAILPIT_ENABLED else "django.core.mail.backends.console.EmailBackend" 
 EMAIL_HOST = "localhost"
 EMAIL_PORT = 1025
 EMAIL_USE_TLS = False
@@ -249,21 +252,22 @@ CORS_ALLOW_CREDENTIALS = True
 
 # Frontend URLs
 FRONTEND_DOMAIN = "{{ cookiecutter.frontend_domain }}"
-FRONTEND_HTTP_ORIGIN = f"http://{FRONTEND_DOMAIN}"
-FRONTEND_HTTPS_ORIGIN = f"https://{FRONTEND_DOMAIN}"
 FRONTEND_URL = f"{ACCOUNT_DEFAULT_HTTP_PROTOCOL}://{FRONTEND_DOMAIN}"
-
-CORS_ALLOWED_ORIGINS = [
-    FRONTEND_HTTP_ORIGIN,
-    FRONTEND_HTTPS_ORIGIN,
-]
-
-CSRF_TRUSTED_ORIGINS = [
-    FRONTEND_HTTP_ORIGIN,
-    FRONTEND_HTTPS_ORIGIN,
-    "http://127.0.0.1:3000",
-]
-
 
 VERIFY_EMAIL_URL = "/verify-email/"
 PASSWORD_RESET_URL = "/password-reset/"
+
+CORS_ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    ("http://127.0.0.1:3000" if DEBUG else ""),
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    FRONTEND_URL,
+    ("http://127.0.0.1:3000" if DEBUG else ""),
+]
+
+# CSRF cookie configuration
+CSRF_COOKIE_NAME = "csrftoken_cookie"
+CSRF_COOKIE_HTTPONLY = False  
+

@@ -3,14 +3,20 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from django.middleware.csrf import get_token
+from allauth.account.models import EmailAddress, EmailConfirmationHMAC
+from allauth.account.utils import user_pk_to_url_str
+from django.core import mail
+from django.test.utils import override_settings
+from allauth.account.forms import default_token_generator
 
-from users.api.v1.tests.conftest import browser_output, app_output, get_login_response
+from users.api.v1.tests.conftest import browser_output, app_output, get_login_response, get_csrf_token
 from django.conf import settings
 
 pytestmark = pytest.mark.django_db 
 
 refresh_cookie_name = settings.REST_AUTH.get('JWT_AUTH_REFRESH_COOKIE', 'jwt-refresh-token')
 access_cookie_name = settings.REST_AUTH.get('JWT_AUTH_COOKIE', 'jwt-auth')
+csrf_cookie_name = settings.CSRF_COOKIE_NAME
 
 class TestEndpoints:
 
@@ -23,6 +29,8 @@ class TestEndpoints:
 
     def test_registration_endpoint_app(self, api_client, register_data, registration_url):
         response = api_client.post(registration_url, data=register_data, format='json', headers={'X-Client': 'app'})
+        print(f"\nResponse Cookeis: {response.cookies}")
+        print(f"\nResponse CSRF Token: {response.cookies.get('csrftoken_cookie')}")
         app_output(response, status.HTTP_201_CREATED)
 
 
@@ -227,7 +235,7 @@ class TestEndpoints:
         assert registration_response.status_code == status.HTTP_201_CREATED
         
         # Get email confirmation key
-        from allauth.account.models import EmailAddress, EmailConfirmationHMAC
+
         email_address = EmailAddress.objects.get(email=register_data['email'])
         email_confirmation = EmailConfirmationHMAC(email_address)
         key = email_confirmation.key
@@ -248,8 +256,6 @@ class TestEndpoints:
         registration_response = api_client.post(registration_url, data=register_data, format='json', headers={'X-Client': 'app'})
         assert registration_response.status_code == status.HTTP_201_CREATED
         
-        # Get email confirmation key
-        from allauth.account.models import EmailAddress, EmailConfirmationHMAC
         email_address = EmailAddress.objects.get(email=register_data['email'])
         email_confirmation = EmailConfirmationHMAC(email_address)
         key = email_confirmation.key
@@ -270,9 +276,6 @@ class TestEndpoints:
         """Test password reset confirm for browser client."""
         user, _ = make_user
         
-        # Generate password reset token
-        from allauth.account.utils import user_pk_to_url_str
-        from allauth.account.forms import default_token_generator
         uid = user_pk_to_url_str(user)
         token = default_token_generator.make_token(user)
         
@@ -295,9 +298,6 @@ class TestEndpoints:
         """Test password reset confirm for app client."""
         user, _ = make_user
         
-        # Generate password reset token
-        from allauth.account.utils import user_pk_to_url_str
-        from allauth.account.forms import default_token_generator
         uid = user_pk_to_url_str(user)
         token = default_token_generator.make_token(user)
         
@@ -315,3 +315,117 @@ class TestEndpoints:
         )
         
         app_output(response, status.HTTP_200_OK)
+
+    ####### emails sent #######
+
+    def test_resend_email_endpoint_browser(self, api_client, resend_email_url, register_data, registration_url):
+        """Test email resend for browser client."""
+        with override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            mail.outbox.clear()
+            registration_response = api_client.post(registration_url, data=register_data, format='json')
+            assert registration_response.status_code == status.HTTP_201_CREATED
+            mail.outbox.clear()
+            csrf_cookie = registration_response.cookies.get('csrftoken_cookie')
+            csrf_token = csrf_cookie.value if csrf_cookie else None
+
+            resend_response = api_client.post(
+                resend_email_url,
+                data={'email': register_data['email']},
+                format='json',
+                headers={
+                    'X-Client': 'browser',
+                    'X-CSRFToken': csrf_token,
+                }
+            )
+
+            assert resend_response.status_code == status.HTTP_200_OK
+            mail_body = mail.outbox[0].body
+            expected_prefix = f"{settings.FRONTEND_URL}{settings.VERIFY_EMAIL_URL}"
+            assert expected_prefix in mail_body
+
+    def test_resend_password_email(self, api_client, reset_password_url, login_url, make_user):
+        """Test password reset email resend for browser client."""
+        with override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            mail.outbox.clear()
+
+            user, password = make_user
+
+            login_response = get_login_response(api_client, login_url, user.username, password, client='browser')
+
+            mail.outbox.clear()
+
+            csrf_cookie = login_response.cookies.get(csrf_cookie_name)
+            csrf_token = csrf_cookie.value if csrf_cookie else None
+
+            resend_response = api_client.post(
+                reset_password_url,
+                data={'email': user.email},
+                format='json',
+                headers={
+                    'X-Client': 'browser',
+                    'X-CSRFToken': csrf_token,
+                }
+            )
+            assert resend_response.status_code == status.HTTP_200_OK
+            mail_body = mail.outbox[0].body
+            uid = user_pk_to_url_str(user)
+            token = default_token_generator.make_token(user)
+            expected_url = f"{settings.FRONTEND_URL}{settings.PASSWORD_RESET_URL}{uid}/{token}/"
+            assert expected_url in mail_body
+
+    #### user details #######
+
+    def test_user_details_endpoint_browser(self, make_user, api_client, user_details_url, login_url):
+        """Test that browser clients can update user details with CSRF protection."""
+        user, password = make_user
+
+        csrf_token = get_csrf_token(api_client, url=login_url, username=user.username, password=password)
+
+        payload = {"username": "newusername"}
+        response = api_client.patch(
+            user_details_url,
+            data=payload,
+            format='json',
+            headers={
+                'X-CSRFToken': csrf_token,
+                'X-Client': 'browser',
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.data
+        assert data.get('username') == payload['username']
+
+        user.refresh_from_db()
+        assert user.username == payload['username']
+
+
+
+    def test_user_details_endpoint_app(self, make_user, api_client, user_details_url, login_url):
+        """Test that app clients can update user details using bearer tokens."""
+        user, password = make_user
+
+        login_response = get_login_response(
+            api_client,
+            login_url,
+            user.username,
+            password,
+            client='app',
+        )
+
+        payload = {"username": "appuser"}
+        response = api_client.patch(
+            user_details_url,
+            data=payload,
+            format='json',
+            headers={
+                'X-Client': 'app',
+                'Authorization': f"Bearer {login_response.data.get('access')}",
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data.get('username') == payload['username']
+
+        user.refresh_from_db()
+        assert user.username == payload['username']

@@ -16,52 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from users.api.v1.views import (
-    CustomVerifyEmailView, 
-    CustomPasswordResetConfirmView,
-    CustomLoginView,
-    CustomRegisterView,
-    CustomLogoutView,
-    CustomTokenRefreshView,
-)
-from django.views.generic import RedirectView
-from django.http import HttpResponseRedirect
-
-from django.conf import settings
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path(
-        'api/v1/auth/', 
-        include(
-            [
-                # Custom views MUST come before dj_rest_auth.urls to override defaults
-                path("login/", CustomLoginView.as_view(), name="rest_login"),
-                path("logout/", CustomLogoutView.as_view(), name="rest_logout"),
-                path("registration/", CustomRegisterView.as_view(), name="rest_register"),
-                path("token/refresh/", CustomTokenRefreshView.as_view(), name="token_refresh"),
-                path(
-                    "registration/account-confirm-email/",
-                    CustomVerifyEmailView.as_view(),
-                    name="account_confirm_email",
-                ),
-                path(
-                    "password/reset/confirm/",
-                    CustomPasswordResetConfirmView.as_view(),
-                    name="custom_rest_password_reset_confirm",
-                ),
-                path(
-                    "password-reset-confirm/<uidb64>/<token>/",
-                    lambda request, uidb64, token: HttpResponseRedirect(
-                        f"{settings.FRONTEND_URL}{settings.PASSWORD_RESET_URL}?uid={uidb64}&token={token}"
-                    ),
-                    name="password_reset_confirm",
-                ),
-                # Default dj-rest-auth URLs (remaining endpoints)
-                path('', include('dj_rest_auth.urls')),
-                path('registration/', include('dj_rest_auth.registration.urls')),
-            ]
-
-        )
-    ) 
+    path('api/v1/auth/', include('users.api.v1.urls')),
 ]

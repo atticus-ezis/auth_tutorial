@@ -36,6 +36,7 @@ def check_csrf(request):
 def client_wants_app_tokens(request):
         return request.headers.get("X-Client", "").lower() == "app"
 
+
 def require_auth_type(request):
     auth_type = request.headers.get('X-Client')
     if not auth_type:

@@ -62,6 +62,10 @@ INSTALLED_APPS = [
 
     # Local apps
     'users', 
+
+    # Api docs 
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
 ]
 
 MIDDLEWARE = [
@@ -199,6 +203,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "apikey": "100/minute",
     },
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
 # Allauth configuration
@@ -271,3 +276,58 @@ CSRF_TRUSTED_ORIGINS = [
 CSRF_COOKIE_NAME = "csrftoken_cookie"
 CSRF_COOKIE_HTTPONLY = False  
 
+
+# API DOCS
+SPECTACULAR_SETTINGS = {
+    "TITLE": "{{ cookiecutter.project_name }} API",
+    "DESCRIPTION": (
+        "REST endpoints secured with a dual-delivery JWT system. "
+        "Browser clients send 'X-Client: browser', receive JWTs in the "
+        "{auth_cookie} cookie, and must mirror the 'csrftoken_cookie' value in the "
+        "'X-CSRFToken' header. Non-browser clients send 'X-Client: app' and use "
+        "standard Bearer tokens."
+    ).format(auth_cookie=REST_AUTH.get("JWT_AUTH_COOKIE", "jwt-auth")),
+    "VERSION": "1.0.0",
+    "SECURITY": [
+        {"cookieAuth": [], "csrfHeader": [], "clientHeader": []},
+        {"bearerAuth": [], "clientHeader": []},
+    ],
+    "COMPONENTS": {
+        "securitySchemes": {
+            # Cookie-based session for browser clients
+            "cookieAuth": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": REST_AUTH.get("JWT_AUTH_COOKIE", "jwt-auth"),
+                "description": (
+                    "JWT access cookie issued to browser clients when 'X-Client: browser' is provided."
+                ),
+            },
+            "csrfHeader": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-CSRFToken",
+                "description": (
+                    "Double-submit CSRF header. Must mirror the value of the 'csrftoken_cookie' cookie."
+                ),
+            },
+            "clientHeader": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-Client",
+                "description": "Client type selector. Accepts 'browser' or 'app'.",
+            },
+            # Bearer tokens for app/SDK clients
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": (
+                    "Bearer access token returned to 'X-Client: app' callers."
+                ),
+            },
+        }
+    },
+    "SWAGGER_UI_SETTINGS": {"persistAuthorization": True},
+    "SERVE_INCLUDE_SCHEMA": False,
+}

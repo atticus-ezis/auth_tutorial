@@ -63,9 +63,7 @@ INSTALLED_APPS = [
     # Local apps
     'users', 
 
-    # Api docs 
-    "drf_spectacular",
-    "drf_spectacular_sidecar",
+    "drf_yasg",
 ]
 
 MIDDLEWARE = [
@@ -198,7 +196,7 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "users.authentication.BearerJWTAuthentication",
         "users.authentication.CookieJWTAuthenticationWithCSRF",
-        "rest_framework.authentication.SessionAuthentication",
+        # "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_THROTTLE_RATES": {
         "apikey": "100/minute",
@@ -277,57 +275,39 @@ CSRF_COOKIE_NAME = "csrftoken_cookie"
 CSRF_COOKIE_HTTPONLY = False  
 
 
-# API DOCS
-SPECTACULAR_SETTINGS = {
-    "TITLE": "{{ cookiecutter.project_name }} API",
-    "DESCRIPTION": (
-        "REST endpoints secured with a dual-delivery JWT system. "
-        "Browser clients send 'X-Client: browser', receive JWTs in the "
-        "{auth_cookie} cookie, and must mirror the 'csrftoken_cookie' value in the "
-        "'X-CSRFToken' header. Non-browser clients send 'X-Client: app' and use "
-        "standard Bearer tokens."
-    ).format(auth_cookie=REST_AUTH.get("JWT_AUTH_COOKIE", "jwt-auth")),
-    "VERSION": "1.0.0",
-    "SECURITY": [
-        {"cookieAuth": [], "csrfHeader": [], "clientHeader": []},
-        {"bearerAuth": [], "clientHeader": []},
-    ],
-    "COMPONENTS": {
-        "securitySchemes": {
-            # Cookie-based session for browser clients
-            "cookieAuth": {
-                "type": "apiKey",
-                "in": "cookie",
-                "name": REST_AUTH.get("JWT_AUTH_COOKIE", "jwt-auth"),
-                "description": (
-                    "JWT access cookie issued to browser clients when 'X-Client: browser' is provided."
-                ),
-            },
-            "csrfHeader": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "X-CSRFToken",
-                "description": (
-                    "Double-submit CSRF header. Must mirror the value of the 'csrftoken_cookie' cookie."
-                ),
-            },
-            "clientHeader": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "X-Client",
-                "description": "Client type selector. Accepts 'browser' or 'app'.",
-            },
-            # Bearer tokens for app/SDK clients
-            "bearerAuth": {
-                "type": "http",
-                "scheme": "bearer",
-                "bearerFormat": "JWT",
-                "description": (
-                    "Bearer access token returned to 'X-Client: app' callers."
-                ),
-            },
-        }
+# API Docs settings
+SWAGGER_SETTINGS = {
+    "USE_SESSION_AUTH": False,
+
+    "PERSIST_AUTH": True,
+
+    # Security schemes (OpenAPI 2.0 style)
+    "SECURITY_DEFINITIONS": {
+        # For app/SDK clients
+        "bearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "Use: Bearer <JWT>",
+        },
+        # For browser flow: header-only parts (cookies ride automatically)
+        "csrfHeader": {
+            "type": "apiKey",
+            "name": "X-CSRFToken",
+            "in": "header",
+            "description": "Double-submit CSRF header; value mirrors CSRF cookie.",
+        },
+        "clientHeader": {
+            "type": "apiKey",
+            "name": "X-Client",
+            "in": "header",
+            "description": "Set to 'browser' or 'app'.",
+        },
     },
-    "SWAGGER_UI_SETTINGS": {"persistAuthorization": True},
-    "SERVE_INCLUDE_SCHEMA": False,
+
+    # Optional: which “security” to apply by default (logical OR across items)
+    "DEFAULT_API_SECURITY": [
+        {"csrfHeader": [], "clientHeader": []},   # browser
+        {"bearerAuth": [], "clientHeader": []},   # app
+    ],
 }

@@ -6,6 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 
 jwt_refresh_cookie = settings.REST_AUTH.get('JWT_AUTH_REFRESH_COOKIE', 'jwt-refresh-token')
+jwt_auth_cookie = settings.REST_AUTH.get('JWT_AUTH_COOKIE', 'jwt-auth')
 
 class BearerJWTAuthentication(JWTAuthentication):
     """
@@ -43,7 +44,6 @@ class CookieJWTAuthenticationWithCSRF(JWTAuthentication):
             return None
 
         # Get token from cookie
-        jwt_auth_cookie = settings.REST_AUTH.get('JWT_AUTH_COOKIE', 'jwt-auth')
         token = request.COOKIES.get(jwt_auth_cookie)
 
         if not token:

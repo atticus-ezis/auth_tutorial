@@ -21,7 +21,7 @@ def check_csrf(request):
     # Django converts HTTP headers to HTTP_ prefix in META
     # e.g., 'X-CSRFToken' header becomes 'HTTP_X_CSRFTOKEN' in request.META
     csrf_token_header = request.META.get('HTTP_X_CSRFTOKEN', '')
-    csrf_token_cookie = request.COOKIES.get('csrftoken_cookie', '')
+    csrf_token_cookie = request.COOKIES.get(settings.CSRF_COOKIE_NAME, '')
     
     if not csrf_token_header:
         raise PermissionDenied('CSRF token missing from header.')

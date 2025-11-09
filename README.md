@@ -14,9 +14,9 @@ This repository is a Cookiecutter template that scaffolds a Django project preco
    form your project directory...
 
    ```bash
-   cookiecutter gh:/atticus-ezis/auth_tutorial.git
+   cookiecutter gh:/atticus-ezis/django_hybird_auth_cookiecutter.git
    or
-   cookiecutter https://github.com/atticus-ezis/auth_tutorial.git
+   cookiecutter https://github.com/atticus-ezis/django_hybird_auth_cookiecutter.git
    ```
 
 3. Answer the prompts to customise project metadata such as the project name, author information, secret key, and frontend domain.
@@ -24,6 +24,10 @@ This repository is a Cookiecutter template that scaffolds a Django project preco
 4. Run 'uv sync' in terminal
 5. Activate the '.venv' uv creates
 6. run 'pytest' inside .venv to generate the user authentication testcases.
+7. View APIs at
+   http://127.0.0.1:8000/api/docs/
+   or
+   http://127.0.0.1:8000/api/redoc/
 
 ## Template Structure
 

@@ -1,3 +1,4 @@
+import logging
 from rest_framework.views import APIView, csrf_exempt
 from dj_rest_auth.views import PasswordResetConfirmView, LoginView, PasswordChangeView
 from dj_rest_auth.registration.views import RegisterView
@@ -6,7 +7,6 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated 
 from allauth.account.utils import url_str_to_user_pk 
 from rest_framework_simplejwt.tokens import RefreshToken
-import traceback
 from allauth.account.models import EmailConfirmation, EmailConfirmationHMAC
 from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model
@@ -18,6 +18,9 @@ from users.mixins import HybridAuthMixin
 from users.core import make_tokens, require_auth_type
 from users.authentication import CustomRefreshTokenAuthentication, BearerJWTAuthentication, CookieJWTAuthenticationWithCSRF
 from django.conf import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class CustomVerifyEmailView(HybridAuthMixin, APIView):
@@ -65,11 +68,10 @@ class CustomVerifyEmailView(HybridAuthMixin, APIView):
             )
             
 
-        except Exception as e:
-            print(f"Error: {e}")
-            print(traceback.format_exc())
+        except Exception as exc:
+            logger.exception("Failed to confirm email for key %s", key)
             return Response(
-                {"key": [f"Error: {str(e)}"]},
+                {"key": [f"Error: {str(exc)}"]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -107,10 +109,10 @@ class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
             
             return response
             
-        except Exception as e:
-            print(f"Error in CustomPasswordResetConfirmView: {e}")
+        except Exception as exc:
+            logger.exception("Password reset confirm failed for uid=%s", request.data.get("uid"))
             return Response(
-                {"detail": [f"Error: {str(e)}"]},
+                {"detail": [f"Error: {str(exc)}"]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -178,9 +180,10 @@ class CustomLogoutView(APIView):
             
             return response
             
-        except Exception as e:
+        except Exception as exc:
+            logger.exception("Logout failed for user %s", request.user)
             return Response(
-                {'detail': f'Error during logout: {str(e)}'},
+                {'detail': f'Error during logout: {str(exc)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 # Get dj-rest-auth's refresh view class

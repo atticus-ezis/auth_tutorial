@@ -286,22 +286,20 @@ CSRF_COOKIE_NAME = "csrftoken_cookie"
 CSRF_COOKIE_HTTPONLY = False  
 
 
-# API Docs settings
+#### Swagger ####
+
 SWAGGER_SETTINGS = {
     "USE_SESSION_AUTH": False,
 
     "PERSIST_AUTH": True,
 
-    # Security schemes (OpenAPI 2.0 style)
     "SECURITY_DEFINITIONS": {
-        # For app/SDK clients
         "bearerAuth": {
             "type": "apiKey",
             "name": "Authorization",
             "in": "header",
             "description": "Use: Bearer <JWT>",
         },
-        # For browser flow: header-only parts (cookies ride automatically)
         "csrfHeader": {
             "type": "apiKey",
             "name": "X-CSRFToken",
@@ -316,9 +314,47 @@ SWAGGER_SETTINGS = {
         },
     },
 
-    # Optional: which “security” to apply by default (logical OR across items)
     "DEFAULT_API_SECURITY": [
         {"csrfHeader": [], "clientHeader": []},   # browser
         {"bearerAuth": [], "clientHeader": []},   # app
     ],
 }
+
+#### Logging configuration ####
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+
+    "formatters": {
+        "verbose": {
+            "format": "[{asctime}] {levelname} {name}: {message}",
+            "style": "{",
+        },
+    },
+
+    "handlers": {
+        "file": {
+            "level": "ERROR",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(BASE_DIR, "logs", "app_errors.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "verbose",
+        },
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+
+    "loggers": {
+        "": {  
+            "handlers": ["file", "console"],
+            "level": "ERROR",
+            "propagate": True,
+        },
+    },
+}
+
+

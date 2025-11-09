@@ -1,9 +1,11 @@
-from dj_rest_auth.jwt_auth import set_jwt_cookies
-from django.middleware.csrf import get_token
 from django.conf import settings
-from rest_framework.response import Response
 from django.middleware import csrf
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
 from users.core import make_tokens, client_wants_app_tokens
+
+import logging
+logger = logging.getLogger(__name__)
 
 jwt_auth_cookie = settings.REST_AUTH.get('JWT_AUTH_COOKIE', 'jwt-auth')
 jwt_refresh_cookie = settings.REST_AUTH.get('JWT_AUTH_REFRESH_COOKIE', 'jwt-refresh-token')
@@ -48,7 +50,6 @@ class HybridAuthMixin:
         
         return response
 
-
     def issue_for_app(self, response, access, refresh):
         """Return tokens in JSON body for mobile/desktop app clients."""
         expires_in = int(access.lifetime.total_seconds()) if hasattr(access, 'lifetime') else None
@@ -85,21 +86,18 @@ class HybridAuthMixin:
             return False
         
         try:
-            from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
-            from rest_framework_simplejwt.exceptions import TokenError
-            
-            # Try to decode as access token first
+                        # Try to decode as access token first
             try:
                 token = AccessToken(token_str)
             except TokenError:
                 # Try as refresh token
                 token = RefreshToken(token_str)
             
-            # Check if 'aud' claim exists and matches
             if 'aud' not in token:
                 return False
             return token.get('aud') == expected_aud
         except Exception:
+            logger.exception("Failed to validate JWT token %s", token_str)
             return False
     
     def _get_user_from_response(self, response):

@@ -58,4 +58,3 @@ Thumbs.db
 # Migration backups (if any)
 */migrations/__pycache__/
 
-SECURITY_EVALUATION.md

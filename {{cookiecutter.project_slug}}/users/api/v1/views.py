@@ -80,6 +80,7 @@ class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
     """
     permission_classes = [AllowAny]  
     authentication_classes = []
+    throttle_scope = "password_reset"
     
     @method_decorator(csrf_exempt)
     def dispatch(self, *args, **kwargs):
@@ -108,7 +109,6 @@ class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
             
         except Exception as e:
             print(f"Error in CustomPasswordResetConfirmView: {e}")
-            print(traceback.format_exc())
             return Response(
                 {"detail": [f"Error: {str(e)}"]},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -117,14 +117,17 @@ class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
 class CustomLoginView(HybridAuthMixin, LoginView):
     """Login view that adapts response format based on Origin header."""
     authentication_classes = []
+    throttle_scope = "login"
     pass
 
 class CustomRegisterView(HybridAuthMixin, RegisterView):
     """Registration view that adapts response format based on Origin header."""
+    throttle_scope = "register"
     pass
 
 class CustomPasswordChangeView(HybridAuthMixin, PasswordChangeView):
     """Password change view that adapts response format based on Origin header."""
+    throttle_scope = "password_change"
     pass
 
 class CustomLogoutView(APIView):
@@ -134,6 +137,7 @@ class CustomLogoutView(APIView):
     """
     authentication_classes = [CookieJWTAuthenticationWithCSRF, BearerJWTAuthentication] 
     permission_classes = [IsAuthenticated]
+    throttle_scope = "logout"
     
     
     def post(self, request, *args, **kwargs):
@@ -183,7 +187,6 @@ class CustomLogoutView(APIView):
 dj_rest_auth_refresh_view_class = get_refresh_view()
 class CustomTokenRefreshView(HybridAuthMixin, dj_rest_auth_refresh_view_class):
 
-    authentication_classes = [CustomRefreshTokenAuthentication]  
-
-    pass
+    authentication_classes = [CustomRefreshTokenAuthentication]
+    throttle_scope = "token_refresh"
 

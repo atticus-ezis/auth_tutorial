@@ -2,7 +2,6 @@ import pytest
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
-from django.middleware.csrf import get_token
 from allauth.account.models import EmailAddress, EmailConfirmationHMAC
 from allauth.account.utils import user_pk_to_url_str
 from django.core import mail
@@ -189,7 +188,6 @@ class TestEndpoints:
         assert logout_response.status_code == status.HTTP_200_OK
         assert logout_response.data.get('detail') == 'Successfully logged out.'
         
-        # Check that cookies are marked for deletion in response
         assert refresh_cookie_name in logout_response.cookies, "Refresh token cookie should be deleted"
         assert access_cookie_name in logout_response.cookies, "Access token cookie should be deleted"
         
@@ -234,13 +232,10 @@ class TestEndpoints:
         registration_response = api_client.post(registration_url, data=register_data, format='json')
         assert registration_response.status_code == status.HTTP_201_CREATED
         
-        # Get email confirmation key
-
         email_address = EmailAddress.objects.get(email=register_data['email'])
         email_confirmation = EmailConfirmationHMAC(email_address)
         key = email_confirmation.key
         
-        # Confirm email
         response = api_client.post(
             confirm_email_url,
             data={'key': key},
@@ -399,7 +394,23 @@ class TestEndpoints:
         user.refresh_from_db()
         assert user.username == payload['username']
 
+    def test_user_details_endpoint_browser_no_csrf(self, make_user, api_client, user_details_url, login_url):
+        """Test that browser clients can update user details with CSRF protection."""
+        user, password = make_user
 
+        csrf_token = get_csrf_token(api_client, url=login_url, username=user.username, password=password)
+
+        payload = {"username": "newusername"}
+        response = api_client.patch(
+            user_details_url,
+            data=payload,
+            format='json',
+            headers={
+                # 'X-CSRFToken': csrf_token,
+                'X-Client': 'browser',
+            },
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN, "CSRF token should be required for browser client"
 
     def test_user_details_endpoint_app(self, make_user, api_client, user_details_url, login_url):
         """Test that app clients can update user details using bearer tokens."""

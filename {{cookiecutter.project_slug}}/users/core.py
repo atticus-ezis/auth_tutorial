@@ -2,6 +2,13 @@ from rest_framework.exceptions import PermissionDenied
 from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.exceptions import ValidationError
+from django.middleware.csrf import (
+    CSRF_TOKEN_LENGTH,
+    _check_token_format,
+    _unmask_cipher_token,
+    InvalidTokenFormat,
+)
+from django.utils.crypto import constant_time_compare
 
 # Usefule helper functions
 
@@ -13,24 +20,47 @@ def make_tokens(user, aud):
     return access, refresh
 
 
+def _normalise_csrf_token(token, source):
+    """
+    Convert a potentially masked CSRF token to its underlying secret.
+    Raises PermissionDenied if the token has an invalid format.
+    """
+    if not token:
+        return ""
+
+    try:
+        _check_token_format(token)
+    except InvalidTokenFormat as exc:
+        raise PermissionDenied(f"CSRF token from {source} {exc.reason}.")
+
+    if len(token) == CSRF_TOKEN_LENGTH:
+        return _unmask_cipher_token(token)
+
+    return token
+
+
 def check_csrf(request):
     """
     Check CSRF token using double-submit cookie pattern.
-    Raises PermissionDenied if CSRF check fails.
+    Accepts either masked or unmasked tokens and compares secrets in constant time.
     """
-    # Django converts HTTP headers to HTTP_ prefix in META
-    # e.g., 'X-CSRFToken' header becomes 'HTTP_X_CSRFTOKEN' in request.META
-    csrf_token_header = request.META.get('HTTP_X_CSRFTOKEN', '')
-    csrf_token_cookie = request.COOKIES.get(settings.CSRF_COOKIE_NAME, '')
-    
+    csrf_token_header = request.META.get("HTTP_X_CSRFTOKEN", "")
+    csrf_token_cookie = request.COOKIES.get(settings.CSRF_COOKIE_NAME, "")
+
     if not csrf_token_header:
-        raise PermissionDenied('CSRF token missing from header.')
-    
+        raise PermissionDenied("CSRF token missing from header.")
+
     if not csrf_token_cookie:
-        raise PermissionDenied('CSRF token missing from cookie.')
-    
-    if csrf_token_header != csrf_token_cookie:
-        raise PermissionDenied('CSRF token mismatch.')
+        raise PermissionDenied("CSRF token missing from cookie.")
+
+    header_secret = _normalise_csrf_token(csrf_token_header, "header")
+    cookie_secret = _normalise_csrf_token(csrf_token_cookie, "cookie")
+
+    if not header_secret or not cookie_secret:
+        raise PermissionDenied("CSRF token missing or invalid.")
+
+    if not constant_time_compare(header_secret, cookie_secret):
+        raise PermissionDenied("CSRF token mismatch.")
 
 
 def client_wants_app_tokens(request):

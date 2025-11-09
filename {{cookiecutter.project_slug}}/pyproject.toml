@@ -17,5 +17,6 @@ dependencies = [
     "pytest>=8.4.2",
     "pytest-django>=4.11.1",
     "drf-yasg==1.21.7",
+    "setuptools>=80.9.0",
 ]
 

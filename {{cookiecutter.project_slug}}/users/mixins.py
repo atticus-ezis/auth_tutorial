@@ -2,6 +2,7 @@ from dj_rest_auth.jwt_auth import set_jwt_cookies
 from django.middleware.csrf import get_token
 from django.conf import settings
 from rest_framework.response import Response
+from django.middleware import csrf
 from users.core import make_tokens, client_wants_app_tokens
 
 jwt_auth_cookie = settings.REST_AUTH.get('JWT_AUTH_COOKIE', 'jwt-auth')
@@ -37,25 +38,16 @@ class HybridAuthMixin:
             httponly=True,
         )
 
-        # remove old csrf tokens for clarity 
-        response.delete_cookie('csrftoken')
-        response.delete_cookie(settings.CSRF_COOKIE_NAME)
-        
-        csrf_token = request.META.get('CSRF_COOKIE')
-        if not csrf_token:
-            csrf_token = get_token(request)
-
-        # Middleware should set this but include anyway for safety   
-        response.set_cookie(
-            csrf_cookie_name,
-            csrf_token,
-        )
+        # --- CSRF: ensure the cookie and exposed token stay in sync ---
+        csrf.get_token(request)
+        csrf_token = request.META.get("CSRF_COOKIE")
         
         if hasattr(response, 'data') and isinstance(response.data, dict):
             response.data['authType'] = 'cookie'
-            response.data['csrfToken'] = csrf_token
+            response.data['csrfToken'] = csrf_token or ""
         
         return response
+
 
     def issue_for_app(self, response, access, refresh):
         """Return tokens in JSON body for mobile/desktop app clients."""

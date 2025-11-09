@@ -3,8 +3,8 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
-from rest_framework import status
 from django.conf import settings
+from django.core.cache import cache
 
 pytestmark = pytest.mark.django_db 
 
@@ -83,6 +83,16 @@ def user_details_url():
     return reverse('user_details')
 
 
+@pytest.fixture(autouse=True)
+def clear_throttle_cache():
+    """
+    Reset throttle history before each test so scoped throttles
+    don't accumulate across the suite.
+    """
+    cache.clear()
+    yield
+    cache.clear()
+
 def browser_output(response, expected_status):
     # body check
     assert response.status_code == expected_status, f"Login failed with status code {response.status_code}, {response.data}"
@@ -102,7 +112,8 @@ def browser_output(response, expected_status):
     assert access.get('aud') == "browser", "JWT access cookie should have browser audience"
     assert refresh.get('aud') == "browser", "JWT refresh cookie should have browser audience"
     assert csrf_cookie is not None, "CSRF token should be in response cookies"
-
+    csrf_body = data.get("csrfToken")
+    assert csrf_body == csrf_cookie.value, "CSRF token value mismatch"
 
 def app_output(response, expected_status):
     # body check

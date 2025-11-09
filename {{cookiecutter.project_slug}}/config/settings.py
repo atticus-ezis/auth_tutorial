@@ -161,8 +161,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # simpel JWT
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=10),
+    "REFRESH_TOKEN_LIFETIME": timedelta(minutes=20),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
 }
@@ -184,10 +184,8 @@ REST_AUTH = {
 
     "LOGOUT_ON_PASSWORD_CHANGE": False,
     
-    # Tokens handled by CookiesOrAuthorizationJWTMixin based on Origin header
-    # "TOKEN_MODEL": None,
 
-    # serializer configuration
+    # Add later when customizing user serializer
     # "USER_DETAILS_SERIALIZER": "users.api.v1.serializers.CustomUserDetailsSerializer",
 }
 
@@ -198,10 +196,23 @@ REST_FRAMEWORK = {
         "users.authentication.CookieJWTAuthenticationWithCSRF",
         # "rest_framework.authentication.SessionAuthentication",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
     "DEFAULT_THROTTLE_RATES": {
+        "anon": "100/minute",
+        "user": "100/minute",
         "apikey": "100/minute",
+        "login": "5/minute",
+        "register": "3/hour",
+        "password_reset": "3/hour",
+        "password_change": "5/hour",
+        "token_refresh": "30/minute",
+        "logout": "10/minute",
+        "dj_rest_auth": "60/minute",
     },
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
 # Allauth configuration

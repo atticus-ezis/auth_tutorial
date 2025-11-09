@@ -32,3 +32,6 @@ env/
 # Test-generated projects (if testing locally)
 test_*/
 
+SECURITY_EVALUATION.md
+
+TODOS.md

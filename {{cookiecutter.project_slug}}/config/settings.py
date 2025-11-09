@@ -28,56 +28,50 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "{{ cookiecutter.django_secret_
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
     # required for allauth
     "django.contrib.sites",
-
     # rest framework
     "rest_framework",
     "rest_framework.authtoken",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
-
     # dj-rest-auth
     "dj_rest_auth",
     "dj_rest_auth.registration",
-
     # allauth
     "allauth",
     "allauth.account",
     "allauth.socialaccount",
-
-    'corsheaders',
-
+    "corsheaders",
     # Local apps
-    'users', 
-
+    "users",
     "drf_yasg",
 ]
 
 MIDDLEWARE = [
     # corsheaders middleware
-    'corsheaders.middleware.CorsMiddleware', 
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
     # 'django.middleware.csrf.CsrfViewMiddleware',
-    'users.middleware.ConditionalCsrfMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "users.middleware.ConditionalCsrfMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # allauth middleware
     "allauth.account.middleware.AccountMiddleware",
 ]
@@ -86,15 +80,15 @@ ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
@@ -107,9 +101,9 @@ WSGI_APPLICATION = "config.wsgi.application"
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
@@ -119,16 +113,16 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -136,9 +130,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -148,15 +142,15 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = "static/"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-# custom settings 
+# custom settings
 
 
 # simpel JWT
@@ -173,18 +167,13 @@ REST_AUTH = {
     "JWT_AUTH_COOKIE": "jwt-auth",
     "JWT_AUTH_REFRESH_COOKIE": "jwt-refresh-token",
     "JWT_AUTH_COOKIE_USE_CSRF": True,
-    "JWT_AUTH_HTTPONLY": True, # keep tokens in cookies secret
-    
+    "JWT_AUTH_HTTPONLY": True,  # keep tokens in cookies secret
     # csrf protection
-    "JWT_AUTH_SAMESITE": "Lax",       
-    "JWT_AUTH_SECURE": not DEBUG, 
-
-    "JWT_AUTH_RETURN_EXPIRATION": True,  
+    "JWT_AUTH_SAMESITE": "Lax",
+    "JWT_AUTH_SECURE": not DEBUG,
+    "JWT_AUTH_RETURN_EXPIRATION": True,
     "SESSION_LOGIN": False,
-
     "LOGOUT_ON_PASSWORD_CHANGE": False,
-    
-
     # Add later when customizing user serializer
     # "USER_DETAILS_SERIALIZER": "users.api.v1.serializers.CustomUserDetailsSerializer",
 }
@@ -224,28 +213,32 @@ ACCOUNT_CONFIRM_EMAIL_ON_GET = False
 ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
 ACCOUNT_UNIQUE_EMAIL = True
 
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = ('http' if DEBUG else 'https') 
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = "http" if DEBUG else "https"
 
 ACCOUNT_EMAIL_CONFIRMATION_HMAC = True
 LOGIN_REDIRECT_URL = "/"
 OLD_PASSWORD_FIELD_ENABLED = True
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 3
 
-ACCOUNT_PASSWORD_RESET_EXPIRE_DAYS = 1  
+ACCOUNT_PASSWORD_RESET_EXPIRE_DAYS = 1
 ACCOUNT_USERNAME_MIN_LENGTH = 3
 ACCOUNT_PASSWORD_MIN_LENGTH = 8
 
 ACCOUNT_LOGIN_METHODS = ["username", "email"]
 SILENCED_SYSTEM_CHECKS = ["account.W001"]
 
-ACCOUNT_ADAPTER = 'users.adapters.CustomAccountAdapter'
+ACCOUNT_ADAPTER = "users.adapters.CustomAccountAdapter"
 
 
 # Email
 MAILPIT_ENABLED = False
 # Use console backend for development (prints emails to console)
 # For production, use SMTP backend with proper email server configuration
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" if MAILPIT_ENABLED else "django.core.mail.backends.console.EmailBackend" 
+EMAIL_BACKEND = (
+    "django.core.mail.backends.smtp.EmailBackend"
+    if MAILPIT_ENABLED
+    else "django.core.mail.backends.console.EmailBackend"
+)
 EMAIL_HOST = "localhost"
 EMAIL_PORT = 1025
 EMAIL_USE_TLS = False
@@ -259,7 +252,7 @@ SITE_ID = 1
 
 #### this is default redirect link
 # ACCOUNT_CONFIRM_EMAIL_URL = 'confirm-email/{key}/'
-# PASSWORD_RESET_CONFIRM_URL = 'reset-password/{uid}/{token}/'  
+# PASSWORD_RESET_CONFIRM_URL = 'reset-password/{uid}/{token}/'
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -283,16 +276,14 @@ CSRF_TRUSTED_ORIGINS = [
 
 # CSRF cookie configuration
 CSRF_COOKIE_NAME = "csrftoken_cookie"
-CSRF_COOKIE_HTTPONLY = False  
+CSRF_COOKIE_HTTPONLY = False
 
 
 #### Swagger ####
 
 SWAGGER_SETTINGS = {
     "USE_SESSION_AUTH": False,
-
     "PERSIST_AUTH": True,
-
     "SECURITY_DEFINITIONS": {
         "bearerAuth": {
             "type": "apiKey",
@@ -313,10 +304,9 @@ SWAGGER_SETTINGS = {
             "description": "Set to 'browser' or 'app'.",
         },
     },
-
     "DEFAULT_API_SECURITY": [
-        {"csrfHeader": [], "clientHeader": []},   # browser
-        {"bearerAuth": [], "clientHeader": []},   # app
+        {"csrfHeader": [], "clientHeader": []},  # browser
+        {"bearerAuth": [], "clientHeader": []},  # app
     ],
 }
 
@@ -325,14 +315,12 @@ SWAGGER_SETTINGS = {
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-
     "formatters": {
         "verbose": {
             "format": "[{asctime}] {levelname} {name}: {message}",
             "style": "{",
         },
     },
-
     "handlers": {
         "file": {
             "level": "ERROR",
@@ -347,14 +335,11 @@ LOGGING = {
             "formatter": "verbose",
         },
     },
-
     "loggers": {
-        "": {  
+        "": {
             "handlers": ["file", "console"],
             "level": "ERROR",
             "propagate": True,
         },
     },
 }
-
-

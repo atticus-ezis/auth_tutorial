@@ -24,17 +24,42 @@ def account_confirm_placeholder(request, key):
     frontend_url = f"{settings.FRONTEND_URL}{settings.VERIFY_EMAIL_URL}"
     return HttpResponseRedirect(f"{frontend_url}?key={key}")
 
+
 urlpatterns = [
-    path('login/', CustomLoginView.as_view(), name='rest_login'),
-    path('logout/', CustomLogoutView.as_view(), name='rest_logout'),
-    path('token/refresh/', CustomTokenRefreshView.as_view(), name='rest_token_refresh'),
-    path('registration/', CustomRegisterView.as_view(), name='rest_register'),
-    path('registration/resend-email/', ResendEmailVerificationView.as_view(), name='resend_email'),
-    path('registration/account-confirm-email/', CustomVerifyEmailView.as_view(), name='account_confirm_email_api'),
-    path('registration/account-confirm-email/<str:key>/', account_confirm_placeholder, name='account_confirm_email'),
-    path('password/change/', CustomPasswordChangeView.as_view(), name='rest_password_change'),
-    path('password/reset/', PasswordResetView.as_view(), name='rest_password_reset'),
-    path('password/reset/confirm/', CustomPasswordResetConfirmView.as_view(), name='password_reset_confirm_api'),
-    path('password-reset-confirm/<uidb64>/<token>/', password_reset_placeholder, name='password_reset_confirm'),
-    path('details/', UserDetailsView.as_view(), name='user_details'),
+    path("login/", CustomLoginView.as_view(), name="rest_login"),
+    path("logout/", CustomLogoutView.as_view(), name="rest_logout"),
+    path("token/refresh/", CustomTokenRefreshView.as_view(), name="rest_token_refresh"),
+    path("registration/", CustomRegisterView.as_view(), name="rest_register"),
+    path(
+        "registration/resend-email/",
+        ResendEmailVerificationView.as_view(),
+        name="resend_email",
+    ),
+    path(
+        "registration/account-confirm-email/",
+        CustomVerifyEmailView.as_view(),
+        name="account_confirm_email_api",
+    ),
+    path(
+        "registration/account-confirm-email/<str:key>/",
+        account_confirm_placeholder,
+        name="account_confirm_email",
+    ),
+    path(
+        "password/change/",
+        CustomPasswordChangeView.as_view(),
+        name="rest_password_change",
+    ),
+    path("password/reset/", PasswordResetView.as_view(), name="rest_password_reset"),
+    path(
+        "password/reset/confirm/",
+        CustomPasswordResetConfirmView.as_view(),
+        name="password_reset_confirm_api",
+    ),
+    path(
+        "password-reset-confirm/<uidb64>/<token>/",
+        password_reset_placeholder,
+        name="password_reset_confirm",
+    ),
+    path("details/", UserDetailsView.as_view(), name="user_details"),
 ]

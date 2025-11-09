@@ -12,6 +12,7 @@ from django.utils.crypto import constant_time_compare
 
 # Usefule helper functions
 
+
 def make_tokens(user, aud):
     refresh = RefreshToken.for_user(user)
     refresh["aud"] = aud
@@ -64,13 +65,19 @@ def check_csrf(request):
 
 
 def client_wants_app_tokens(request):
-        return request.headers.get("X-Client", "").lower() == "app"
+    return request.headers.get("X-Client", "").lower() == "app"
 
 
 def require_auth_type(request):
-    auth_type = request.headers.get('X-Client')
+    auth_type = request.headers.get("X-Client")
     if not auth_type:
-        raise ValidationError({"detail": [("Missing X-Client header.")]})
-    if auth_type not in ['browser', 'app']:
-        raise ValidationError({"detail": [("Invalid authentication type. expected 'browser' or 'app', got '{auth_type}'.")]})
+        raise ValidationError({"detail": ["Missing X-Client header."]})
+    if auth_type not in ["browser", "app"]:
+        raise ValidationError(
+            {
+                "detail": [
+                    "Invalid authentication type. expected 'browser' or 'app', got '{auth_type}'."
+                ]
+            }
+        )
     return auth_type

@@ -38,10 +38,6 @@ class CustomVerifyEmailView(HybridAuthMixin, APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
-    # @method_decorator(csrf_exempt)
-    # def dispatch(self, *args, **kwargs):
-    #     return super().dispatch(*args, **kwargs)
-
     def post(self, request):
         key = request.data.get("key")
         if not key:
@@ -127,22 +123,21 @@ class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
 
 
 class CustomLoginView(HybridAuthMixin, LoginView):
-    """Login view that adapts response format based on Origin header."""
+    """Login view that adapts response format based on X-Client header."""
 
-    authentication_classes = []
     throttle_scope = "login"
     pass
 
 
 class CustomRegisterView(HybridAuthMixin, RegisterView):
-    """Registration view that adapts response format based on Origin header."""
+    """Registration view that adapts response format based on X-Client header."""
 
     throttle_scope = "register"
     pass
 
 
 class CustomPasswordChangeView(HybridAuthMixin, PasswordChangeView):
-    """Password change view that adapts response format based on Origin header."""
+    """Password change view that adapts response format based on X-Client header."""
 
     throttle_scope = "password_change"
     pass
@@ -151,7 +146,6 @@ class CustomPasswordChangeView(HybridAuthMixin, PasswordChangeView):
 class CustomLogoutView(APIView):
     """
     Custom logout view that handles both cookie-based (browser) and header-based (app) JWT authentication.
-    CSRF exempt for better UX - logout is typically a safe operation.
     """
 
     authentication_classes = [CookieJWTAuthenticationWithCSRF, BearerJWTAuthentication]

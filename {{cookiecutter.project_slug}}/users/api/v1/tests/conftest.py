@@ -98,6 +98,11 @@ def user_details_url():
     return reverse("user_details")
 
 
+@pytest.fixture
+def password_change_url():
+    return reverse("rest_password_change")
+
+
 @pytest.fixture(autouse=True)
 def clear_throttle_cache():
     """

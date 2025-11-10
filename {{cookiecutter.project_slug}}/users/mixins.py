@@ -1,8 +1,9 @@
 from django.conf import settings
 from django.middleware import csrf
-from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
-from users.core import make_tokens, client_wants_app_tokens
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+
+from users.core import client_wants_app_tokens, make_tokens
 
 import logging
 
@@ -26,154 +27,198 @@ class HybridAuthMixin:
     The mixin extracts existing tokens and formats them appropriately.
     """
 
+    def _response_data(self, response):
+        data = getattr(response, "data", None)
+        return data if isinstance(data, dict) else None
+
+    def _clear_response_tokens(self, response):
+        data = self._response_data(response)
+        if data:
+            data.pop("access", None)
+            data.pop("refresh", None)
+        return data
+
+    def _delete_cookies(self, response, *names):
+        for name in names:
+            if response.cookies.get(name):
+                response.delete_cookie(name)
+                try:
+                    del response.cookies[name]
+                except KeyError:
+                    pass
+
     def issue_for_browser(self, request, response, access, refresh):
-        """Set tokens as HttpOnly cookies for browser clients."""
-        # Remove tokens from response body if present
-        if hasattr(response, "data") and isinstance(response.data, dict):
-            response.data.pop("access", None)
-            response.data.pop("refresh", None)
+        data = self._clear_response_tokens(response)
+        if not access or not refresh:
+            return response
 
-        # Set JWT tokens as HttpOnly cookies
-        response.set_cookie(
-            jwt_auth_cookie,
-            str(access),
-            httponly=True,
-        )
-        response.set_cookie(
-            jwt_refresh_cookie,
-            str(refresh),
-            httponly=True,
-        )
+        response.set_cookie(jwt_auth_cookie, str(access))
+        response.set_cookie(jwt_refresh_cookie, str(refresh))
 
-        # --- CSRF: ensure the cookie and exposed token stay in sync ---
         csrf.get_token(request)
-        csrf_token = request.META.get("CSRF_COOKIE")
-
-        if hasattr(response, "data") and isinstance(response.data, dict):
-            response.data["authType"] = "cookie"
-            response.data["csrfToken"] = csrf_token or ""
-
+        if data is not None:
+            data.update(
+                {
+                    "authType": "cookie",
+                    "csrfToken": request.META.get("CSRF_COOKIE", ""),
+                }
+            )
         return response
 
     def issue_for_app(self, response, access, refresh):
-        """Return tokens in JSON body for mobile/desktop app clients."""
+        data = self._response_data(response)
+        if not access or not refresh:
+            if data is not None:
+                data.pop("access", None)
+                data.pop("refresh", None)
+            return response
+
         expires_in = (
             int(access.lifetime.total_seconds())
-            if hasattr(access, "lifetime")
+            if getattr(access, "lifetime", None)
             else None
         )
-        if hasattr(response, "data") and isinstance(response.data, dict):
-            response.data["access"] = str(access)
-            response.data["refresh"] = str(refresh)
-            response.data["token_type"] = "Bearer"
-            response.data["expires_in"] = expires_in
-            response.data["authType"] = "bearer"
+        if data is not None:
+            data.update(
+                {
+                    "access": str(access),
+                    "refresh": str(refresh),
+                    "expires_in": expires_in,
+                    "authType": "bearer",
+                }
+            )
 
-        if jwt_auth_cookie in response.cookies:
-            response.delete_cookie(jwt_auth_cookie)
-            del response.cookies[jwt_auth_cookie]
-        if jwt_refresh_cookie in response.cookies:
-            response.delete_cookie(jwt_refresh_cookie)
-            del response.cookies[jwt_refresh_cookie]
-        if csrf_cookie_name in response.cookies:
-            response.delete_cookie(csrf_cookie_name)
-            del response.cookies[csrf_cookie_name]
-        if "csrftoken" in response.cookies:
-            del response.cookies["csrftoken"]
-        if "csrftoken_cookie" in response.cookies:
-            del response.cookies["csrftoken_cookie"]
-
+        self._delete_cookies(
+            response,
+            jwt_auth_cookie,
+            jwt_refresh_cookie,
+            csrf_cookie_name,
+            "csrftoken",
+            "csrftoken_cookie",
+        )
         return response
 
     def _validate_token_has_aud(self, token_str, expected_aud):
-        """
-        Validate that a token string has the correct audience claim.
-        Returns True if valid, False otherwise.
-        """
         if not token_str:
             return False
 
-        try:
-            # Try to decode as access token first
+        token = None
+        for token_cls in (AccessToken, RefreshToken):
             try:
-                token = AccessToken(token_str)
+                token = token_cls(token_str)
+                break
             except TokenError:
-                # Try as refresh token
-                token = RefreshToken(token_str)
-
-            if "aud" not in token:
-                return False
+                continue
+        if token is None:
+            return False
+        try:
             return token.get("aud") == expected_aud
         except Exception:
             logger.exception("Failed to validate JWT token %s", token_str)
             return False
 
+    def _blacklist_refresh_token(self, token_str):
+        """
+        Attempt to blacklist the provided refresh token.
+        Silently ignores failures when blacklist app is not enabled or
+        token is already invalid/expired.
+        """
+        if not token_str:
+            return
+
+        try:
+            refresh_token = RefreshToken(token_str)
+            blacklist = getattr(refresh_token, "blacklist", None)
+            if callable(blacklist):
+                blacklist()
+        except TokenError:
+            logger.debug("Refresh token already invalid; skipping blacklist.")
+        except AttributeError:
+            logger.debug("Token blacklist not available; skipping blacklist.")
+        except Exception:
+            logger.exception("Failed to blacklist refresh token.")
+
     def _get_user_from_response(self, response):
-        """Extract user from response data or self."""
         user = getattr(self, "user", None)
+        if getattr(user, "is_authenticated", False):
+            return user
 
-        if not user and hasattr(response, "data") and isinstance(response.data, dict):
-            # Try to get user from response data (common in registration)
-            user_data = response.data.get("user", {})
-            if isinstance(user_data, dict):
-                user_id = user_data.get("id") or user_data.get("pk")
-                if user_id:
-                    from django.contrib.auth import get_user_model
+        data = self._response_data(response)
+        if not data:
+            return None
 
-                    User = get_user_model()
-                    try:
-                        user = User.objects.get(pk=user_id)
-                    except User.DoesNotExist:
-                        pass
+        user_data = data.get("user")
+        if not isinstance(user_data, dict):
+            return None
 
-        return user
+        user_id = user_data.get("id") or user_data.get("pk")
+        if not user_id:
+            return None
 
-    def _get_or_issue_tokens_from_response(self, response, expected_aud):
-        access = None
-        refresh = None
+        from django.contrib.auth import get_user_model
 
-        if hasattr(response, "data") and isinstance(response.data, dict):
-            access = response.data.get("access")
-            refresh = response.data.get("refresh")
+        User = get_user_model()
+        try:
+            return User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return None
 
-        # If no tokens in body, check cookies (dj-rest-auth might have set them)
-        if not access or not refresh:
-            jwt_auth_cookie = settings.REST_AUTH.get("JWT_AUTH_COOKIE", "jwt-auth")
-            jwt_refresh_cookie = settings.REST_AUTH.get(
-                "JWT_AUTH_REFRESH_COOKIE", "jwt-refresh-token"
-            )
+    def _get_user_from_tokens(self, access, refresh):
+        token = None
+        try:
+            if refresh:
+                token = RefreshToken(refresh)
+            elif access:
+                token = AccessToken(access)
+        except TokenError:
+            return None
+        except Exception:
+            logger.exception("Failed to decode JWT token for user lookup.")
+            return None
 
+        user_id = token.get("user_id") if token else None
+        if not user_id:
+            return None
+
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        try:
+            return User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return None
+
+    def _extract_tokens(self, response):
+        data = self._response_data(response) or {}
+        access = data.get("access")
+        refresh = data.get("refresh")
+
+        if not (access and refresh):
             access_cookie = response.cookies.get(jwt_auth_cookie)
             refresh_cookie = response.cookies.get(jwt_refresh_cookie)
-
-            if access_cookie:
-                access = access_cookie.value
-            if refresh_cookie:
-                refresh = refresh_cookie.value
-
-        tokens_need_recreation = False
-
-        if access and refresh:
-            # Validate both tokens have correct audience
-            access_valid = self._validate_token_has_aud(access, expected_aud)
-            refresh_valid = self._validate_token_has_aud(refresh, expected_aud)
-
-            if not access_valid or not refresh_valid:
-                tokens_need_recreation = True
-
-        # If tokens are missing or invalid, get user and create new tokens with 'aud'
-        if not access or not refresh or tokens_need_recreation:
-            user = self._get_user_from_response(response)
-
-            if user:
-                # Create tokens with appropriate audience (always includes 'aud' claim)
-                access, refresh = make_tokens(user, expected_aud)
-            else:
-                # No tokens and no user - return as-is
-                if not access and not refresh:
-                    return response
+            access = access or getattr(access_cookie, "value", None)
+            refresh = refresh or getattr(refresh_cookie, "value", None)
 
         return access, refresh
+
+    def _get_or_issue_tokens_from_response(self, request, response, expected_aud):
+        access, refresh = self._extract_tokens(response)
+        user = self._get_user_from_response(response)
+
+        request_user = getattr(request, "user", None)
+        if getattr(request_user, "is_authenticated", False):
+            user = request_user
+
+        if not user:
+            user = self._get_user_from_tokens(access, refresh)
+
+        if not user:
+            return (access, refresh) if access and refresh else (None, None)
+
+        if refresh:
+            self._blacklist_refresh_token(refresh)
+
+        return make_tokens(user, expected_aud)
 
     def finalize_response(self, request, response, *args, **kwargs):
         """
@@ -187,17 +232,20 @@ class HybridAuthMixin:
         This method validates and recreates tokens if they lack the correct 'aud' claim.
         """
         response = super().finalize_response(request, response, *args, **kwargs)
-
-        if response.status_code not in [200, 201]:
+        if response.status_code not in (200, 201):
             return response
 
-        expected_aud = "app" if client_wants_app_tokens(request) else "browser"
+        is_app = client_wants_app_tokens(request)
+        expected_aud = "app" if is_app else "browser"
 
         access, refresh = self._get_or_issue_tokens_from_response(
-            response, expected_aud
+            request, response, expected_aud
         )
+        if not access or not refresh:
+            return response
 
-        if client_wants_app_tokens(request):
-            return self.issue_for_app(response, access, refresh)
-        else:
-            return self.issue_for_browser(request, response, access, refresh)
+        return (
+            self.issue_for_app(response, access, refresh)
+            if is_app
+            else self.issue_for_browser(request, response, access, refresh)
+        )

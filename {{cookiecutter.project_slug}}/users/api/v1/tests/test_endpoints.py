@@ -259,6 +259,34 @@ class TestEndpoints:
         except TokenError:
             pass
 
+    ####### password change #######
+
+    def test_password_change_endpoint_app(
+        self, make_user, api_client, password_change_url, login_url
+    ):
+        user, password = make_user
+
+        login_response = get_login_response(
+            api_client, login_url, user.username, password, client="app"
+        )
+
+        access_token = login_response.data.get("access")
+
+        password_change_response = api_client.post(
+            password_change_url,
+            data={
+                "old_password": password,
+                "new_password1": "NewPassword123!",
+                "new_password2": "NewPassword123!",
+            },
+            format="json",
+            headers={"X-Client": "app", "Authorization": f"Bearer {access_token}"},
+        )
+        assert (
+            password_change_response.status_code == status.HTTP_200_OK
+        ), f"status coode is {password_change_response.status_code} and data is {password_change_response.data}"
+        app_output(password_change_response, status.HTTP_200_OK)
+
     ####### email confirm #######
 
     def test_confirm_email_endpoint_browser(

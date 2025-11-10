@@ -23,8 +23,10 @@ This repository is a Cookiecutter template that scaffolds a Django project preco
 
 4. Run 'uv sync' in terminal
 5. Activate the '.venv' uv creates
-6. run 'pytest' inside .venv to generate the user authentication testcases.
-7. View APIs at
+6. run 'python manage.py migrate'
+7. run 'pytest' to generate the user authentication testcases.
+8. start server 'python manage.py runserver'
+9. View APIs at
    http://127.0.0.1:8000/api/docs/
    or
    http://127.0.0.1:8000/api/redoc/
@@ -36,6 +38,13 @@ This repository is a Cookiecutter template that scaffolds a Django project preco
   - `manage.py`, `pyproject.toml`, and pytest configuration.
   - `{{cookiecutter.project_slug}}/` – Django settings, URLs, and ASGI/WSGI entrypoints.
   - `users/` – pluggable authentication app with API endpoints, mixins, and tests.
+
+## Features
+
+- `API Documentation with Swagger`
+- `Error logging`
+- `pe-commit formatting with ruff`
+- `pytests included`
 
 ## Next Steps
 

@@ -16,7 +16,7 @@ from dj_rest_auth.jwt_auth import get_refresh_view
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from users.mixins import HybridAuthMixin
-from users.core import make_tokens, require_auth_type
+from users.core import require_auth_type
 from users.authentication import (
     CustomRefreshTokenAuthentication,
     BearerJWTAuthentication,
@@ -42,9 +42,7 @@ class CustomVerifyEmailView(HybridAuthMixin, APIView):
         key = request.data.get("key")
         if not key:
             raise ValidationError({"key": ["Missing verification key."]})
-
-        auth_type = require_auth_type(request)  # must know what to return
-
+        require_auth_type(request)
         try:
             emailconfirmation = EmailConfirmation.objects.filter(
                 key=key
@@ -54,18 +52,10 @@ class CustomVerifyEmailView(HybridAuthMixin, APIView):
 
             # Confirm the email address (marks it as verified in the database)
             emailconfirmation.confirm(request)
-
-            # Create tokens with correct audience
-            user = emailconfirmation.email_address.user
-            aud = "app" if auth_type == "app" else "browser"
-            access, refresh = make_tokens(user, aud)
+            self.user = emailconfirmation.email_address.user
 
             return Response(
-                {
-                    "detail": "Email confirmed successfully",
-                    "access": str(access),
-                    "refresh": str(refresh),
-                },
+                {"detail": "Email confirmed successfully"},
                 status=status.HTTP_200_OK,
             )
 
@@ -92,7 +82,7 @@ class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
         return super().dispatch(*args, **kwargs)
 
     def post(self, request, *args, **kwargs):
-        auth_type = require_auth_type(request)  # must know what to return
+        require_auth_type(request)
         try:
             response = super().post(request, *args, **kwargs)
             if response.status_code == status.HTTP_200_OK:
@@ -101,17 +91,14 @@ class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
 
                 # Decode uid using allauth's base36 decoder
                 user_pk = url_str_to_user_pk(uid)
-                user = User.objects.get(pk=user_pk)
+                self.user = User.objects.get(pk=user_pk)
 
-                aud = "app" if auth_type == "app" else "browser"
-                access, refresh = make_tokens(user, aud)
-                # Add tokens to response data (mixin will handle cookie/JSON formatting)
-                response.data["access"] = str(access)
-                response.data["refresh"] = str(refresh)
-                response.data["message"] = "Password reset successfully"
+                if isinstance(getattr(response, "data", None), dict):
+                    response.data["message"] = "Password reset successfully"
+                else:
+                    response.data = {"message": "Password reset successfully"}
 
             return response
-
         except Exception as exc:
             logger.exception(
                 "Password reset confirm failed for uid=%s", request.data.get("uid")

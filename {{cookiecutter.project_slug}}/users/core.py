@@ -64,10 +64,6 @@ def check_csrf(request):
         raise PermissionDenied("CSRF token mismatch.")
 
 
-def client_wants_app_tokens(request):
-    return request.headers.get("X-Client", "").lower() == "app"
-
-
 def client_type(request):
     allowed_types = ["browser", "app"]
     client_type = request.headers.get("X-Client", "").lower().strip()

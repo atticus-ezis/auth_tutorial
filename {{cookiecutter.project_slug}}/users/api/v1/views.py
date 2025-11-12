@@ -13,8 +13,6 @@ from django.contrib.auth import get_user_model
 
 # from users.mixins import CookiesOrAuthorizationJWTMixin
 from dj_rest_auth.jwt_auth import get_refresh_view
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 from users.mixins import HybridAuthMixin
 from users.core import require_auth_type
 from users.authentication import (
@@ -76,10 +74,6 @@ class CustomPasswordResetConfirmView(HybridAuthMixin, PasswordResetConfirmView):
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_scope = "password_reset"
-
-    @method_decorator(csrf_exempt)
-    def dispatch(self, *args, **kwargs):
-        return super().dispatch(*args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         require_auth_type(request)

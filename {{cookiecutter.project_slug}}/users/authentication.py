@@ -6,7 +6,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from users.core import check_csrf, client_wants_app_tokens
+from users.core import check_csrf, client_type
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +129,7 @@ class CustomRefreshTokenAuthentication(BaseAuthentication):
 
     def authenticate(self, request):
         try:
-            app_client = client_wants_app_tokens(request)
-            if not app_client:
+            if client_type(request) == "browser":
                 check_csrf(request)
                 refresh_token_string = request.COOKIES.get(jwt_refresh_cookie)
                 if not refresh_token_string:

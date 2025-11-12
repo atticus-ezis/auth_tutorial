@@ -68,6 +68,22 @@ def client_wants_app_tokens(request):
     return request.headers.get("X-Client", "").lower() == "app"
 
 
+def client_type(request):
+    allowed_types = ["browser", "app"]
+    client_type = request.headers.get("X-Client", "").lower().strip()
+    if not client_type:
+        return "browser"
+    if client_type not in allowed_types:
+        raise ValidationError(
+            {
+                "detail": [
+                    f"Invalid client type. expected {allowed_types}, got '{client_type}'."
+                ]
+            }
+        )
+    return client_type
+
+
 def require_auth_type(request):
     auth_type = request.headers.get("X-Client")
     if not auth_type:

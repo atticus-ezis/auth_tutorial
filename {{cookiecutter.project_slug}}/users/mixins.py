@@ -2,8 +2,9 @@ from django.conf import settings
 from django.middleware import csrf
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from django.contrib.auth import get_user_model
 
-from users.core import client_wants_app_tokens, make_tokens
+from users.core import make_tokens, client_type
 
 import logging
 
@@ -98,25 +99,6 @@ class HybridAuthMixin:
         )
         return response
 
-    def _validate_token_has_aud(self, token_str, expected_aud):
-        if not token_str:
-            return False
-
-        token = None
-        for token_cls in (AccessToken, RefreshToken):
-            try:
-                token = token_cls(token_str)
-                break
-            except TokenError:
-                continue
-        if token is None:
-            return False
-        try:
-            return token.get("aud") == expected_aud
-        except Exception:
-            logger.exception("Failed to validate JWT token %s", token_str)
-            return False
-
     def _blacklist_refresh_token(self, token_str):
         """
         Attempt to blacklist the provided refresh token.
@@ -138,31 +120,6 @@ class HybridAuthMixin:
         except Exception:
             logger.exception("Failed to blacklist refresh token.")
 
-    def _get_user_from_response(self, response):
-        user = getattr(self, "user", None)
-        if getattr(user, "is_authenticated", False):
-            return user
-
-        data = self._response_data(response)
-        if not data:
-            return None
-
-        user_data = data.get("user")
-        if not isinstance(user_data, dict):
-            return None
-
-        user_id = user_data.get("id") or user_data.get("pk")
-        if not user_id:
-            return None
-
-        from django.contrib.auth import get_user_model
-
-        User = get_user_model()
-        try:
-            return User.objects.get(pk=user_id)
-        except User.DoesNotExist:
-            return None
-
     def _get_user_from_tokens(self, access, refresh):
         token = None
         try:
@@ -179,8 +136,6 @@ class HybridAuthMixin:
         user_id = token.get("user_id") if token else None
         if not user_id:
             return None
-
-        from django.contrib.auth import get_user_model
 
         User = get_user_model()
         try:
@@ -201,24 +156,24 @@ class HybridAuthMixin:
 
         return access, refresh
 
-    def _get_or_issue_tokens_from_response(self, request, response, expected_aud):
-        access, refresh = self._extract_tokens(response)
-        user = self._get_user_from_response(response)
+    def _get_user(self, request, access, refresh):
+        # check instance
+        user = getattr(self, "user", None)
+        if getattr(user, "is_authenticated", False):
+            return user
 
+        # check request
         request_user = getattr(request, "user", None)
         if getattr(request_user, "is_authenticated", False):
-            user = request_user
+            return request_user
+
+        # check tokens
+        user = self._get_user_from_tokens(access, refresh)
 
         if not user:
-            user = self._get_user_from_tokens(access, refresh)
+            raise ValueError("User not found")
 
-        if not user:
-            return (access, refresh) if access and refresh else (None, None)
-
-        if refresh:
-            self._blacklist_refresh_token(refresh)
-
-        return make_tokens(user, expected_aud)
+        return user
 
     def finalize_response(self, request, response, *args, **kwargs):
         """
@@ -235,17 +190,20 @@ class HybridAuthMixin:
         if response.status_code not in (200, 201):
             return response
 
-        is_app = client_wants_app_tokens(request)
-        expected_aud = "app" if is_app else "browser"
+        auth_type = client_type(request)
 
-        access, refresh = self._get_or_issue_tokens_from_response(
-            request, response, expected_aud
-        )
-        if not access or not refresh:
-            return response
+        incoming_access, incoming_refresh = self._extract_tokens(response)
+
+        user = self._get_user(request, incoming_access, incoming_refresh)
+
+        self._blacklist_refresh_token(incoming_refresh)
+
+        outgoing_access, outgoing_refresh = make_tokens(user, auth_type)
 
         return (
-            self.issue_for_app(response, access, refresh)
-            if is_app
-            else self.issue_for_browser(request, response, access, refresh)
+            self.issue_for_app(response, outgoing_access, outgoing_refresh)
+            if auth_type == "app"
+            else self.issue_for_browser(
+                request, response, outgoing_access, outgoing_refresh
+            )
         )
